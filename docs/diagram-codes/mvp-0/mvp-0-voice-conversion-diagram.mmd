@@ -1,0 +1,44 @@
+
+flowchart TD
+    U["User / Job Seeker"]
+
+    subgraph FE["Frontend: React + Vite + TypeScript"]
+        MIC["Audio Recorder"]
+        UI["Conversation UI"]
+        PLAYER["Audio Player"]
+    end
+
+    subgraph BE["Backend: FastAPI"]
+        API["POST /api/v1/voice/chat"]
+        ORCH["Voice Pipeline Orchestrator"]
+        SESSION["In-Memory Session State"]
+    end
+
+    subgraph EXT["External Model APIs"]
+        STT["Gnani Prisma v2.5 - STT"]
+        LLM["LLM Provider - Reasoning"]
+        TTS["Gnani Timbre v3.0 - TTS"]
+    end
+
+    U -->|Speaks Hindi / English| MIC
+    MIC -->|Audio Upload| API
+    API --> ORCH
+    ORCH -->|Audio| STT
+    STT -->|Transcript| ORCH
+    ORCH <-->|Conversation Context| SESSION
+    ORCH -->|Messages| LLM
+    LLM -->|Generated Response| ORCH
+    ORCH -->|Response Text| TTS
+    TTS -->|Generated Audio| ORCH
+    ORCH -->|Transcript + Reply + Audio| API
+    API --> UI
+    UI --> PLAYER
+    PLAYER -->|Speech Output| U
+
+    classDef frontend fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef backend fill:#dcfce7,stroke:#16a34a,color:#166534
+    classDef external fill:#f3e8ff,stroke:#9333ea,color:#6b21a8
+
+    class MIC,UI,PLAYER frontend
+    class API,ORCH,SESSION backend
+    class STT,LLM,TTS external

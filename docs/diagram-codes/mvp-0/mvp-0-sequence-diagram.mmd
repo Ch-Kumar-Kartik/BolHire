@@ -1,0 +1,28 @@
+
+sequenceDiagram
+    autonumber
+    actor User
+    participant FE as React Frontend
+    participant API as FastAPI
+    participant STT as Gnani STT
+    participant LLM as LLM Provider
+    participant TTS as Gnani TTS
+
+    User->>FE: Record Hindi/English audio
+    FE->>API: POST /api/v1/voice/chat
+    API->>STT: Send audio
+    STT-->>API: Transcript
+
+    API->>API: Load session context
+    API->>LLM: Transcript + conversation history
+    LLM-->>API: Generated response
+    API->>API: Update in-memory session
+
+    API->>TTS: Synthesize response
+    TTS-->>API: Audio
+
+    API-->>FE: Transcript + reply + audio
+    FE->>User: Display text and play audio
+
+    Note over FE,API: REST, push-to-talk, non-streaming
+    Note over API,TTS: Record stage-level latency
