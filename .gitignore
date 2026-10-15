@@ -15,3 +15,5 @@ backend/*.egg-info/
 .codex/
 .aws/
 .agents/
+
+local-dev-commands.txt

@@ -50,3 +50,25 @@ class TextChatResponse(BaseModel):
     audio: None = None
     timings_ms: TimingMS
     estimated_speech_credits: Literal[0] = 0
+
+
+class VoiceAudio(BaseModel):
+    mime_type: Literal["audio/wav"]
+    base64: str
+
+
+class VoiceTimingMS(BaseModel):
+    stt: float
+    llm: float
+    tts: float
+    total: float
+
+
+class VoiceChatResponse(BaseModel):
+    session_id: str
+    transcript: str
+    reply: str
+    audio: VoiceAudio | None
+    timings_ms: VoiceTimingMS
+    estimated_speech_credits: Literal[0] = 0
+    warning: str | None = None

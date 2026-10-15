@@ -1,9 +1,13 @@
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import create_api_router
+from app.api.routes import STTTranscriptionError, create_api_router
 from app.providers.llm import MockLLMProvider
+from app.providers.speech import MockSTTProvider, MockTTSProvider, STTProvider, TTSProvider
 from app.services.pipeline import (
     LLMGenerationError,
     TextConversationPipeline,
@@ -13,10 +17,20 @@ from app.services.sessions import (
     SessionExpiredError,
     SessionNotFoundError,
 )
+from app.services.wav import InvalidAudioError
 
 
-def create_app(pipeline: TextConversationPipeline | None = None) -> FastAPI:
+def create_app(
+    pipeline: TextConversationPipeline | None = None,
+    *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
+) -> FastAPI:
     app = FastAPI(title="BolHire API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[os.getenv("BACKEND_CORS_ORIGIN", "http://localhost:5173")],
+        allow_methods=["POST", "GET"],
+        allow_headers=["*"],
+    )
     conversation_pipeline = pipeline or TextConversationPipeline(
         llm=MockLLMProvider(), sessions=InMemorySessionStore()
     )
@@ -33,6 +47,11 @@ def create_app(pipeline: TextConversationPipeline | None = None) -> FastAPI:
             return error_response(
                 422, "UNSUPPORTED_LANGUAGE", "Supported languages are en-IN and hi-IN."
             )
+        if any(
+            item["type"] == "literal_error" and item["loc"][-1] == "language"
+            for item in error.errors()
+        ):
+            return error_response(422, "UNSUPPORTED_LANGUAGE", "Supported languages are en-IN and hi-IN.")
         if "json_invalid" in error_types:
             return error_response(400, "MALFORMED_JSON", "Request body must be valid JSON.")
         return error_response(422, "INVALID_REQUEST", "Request data is invalid.")
@@ -59,11 +78,21 @@ def create_app(pipeline: TextConversationPipeline | None = None) -> FastAPI:
             502, "LLM_GENERATION_FAILED", "The conversation provider could not reply."
         )
 
+    @app.exception_handler(InvalidAudioError)
+    async def invalid_audio_handler(_request: Request, error: InvalidAudioError) -> JSONResponse:
+        return error_response(422, "INVALID_AUDIO", str(error))
+
+    @app.exception_handler(STTTranscriptionError)
+    async def stt_error_handler(_request: Request, _error: STTTranscriptionError) -> JSONResponse:
+        return error_response(502, "STT_TRANSCRIPTION_FAILED", "The speech provider could not transcribe audio.")
+
     @app.get("/api/v1/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(create_api_router(conversation_pipeline))
+    app.include_router(create_api_router(
+        conversation_pipeline, stt or MockSTTProvider(), tts or MockTTSProvider()
+    ))
     return app
 
 
