@@ -53,11 +53,86 @@ h1 {
   line-height: 1.6;
 }
 
-.status {
-  margin: 2rem 0 0;
+.recorder {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #dbe3ee;
+}
+
+.recorder h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.recorder-description,
+.recording-status,
+.playback p {
+  color: #475569;
+  line-height: 1.5;
+}
+
+.recorder-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0.625rem 1rem;
+  border: 0;
+  border-radius: 0.625rem;
+  color: #ffffff;
+  background: #2563eb;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.secondary-button {
+  color: #1e40af;
+  background: #dbeafe;
+}
+
+.recording-status {
+  margin: 1rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-error {
+  margin: 1rem 0 0;
   padding: 0.875rem 1rem;
   border-radius: 0.75rem;
-  color: #1d4ed8;
-  background: #dbeafe;
+  color: #b91c1c;
+  background: #fee2e2;
   font-weight: 600;
+}
+
+.playback {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+}
+
+.playback audio {
+  width: 100%;
+}
+
+.playback p {
+  margin: 0.75rem 0;
+}
+
+.text-button {
+  min-height: auto;
+  padding: 0;
+  color: #1d4ed8;
+  background: transparent;
+  text-decoration: underline;
 }

@@ -1,3 +1,5 @@
+import Recorder from './components/Recorder'
+
 function App() {
   return (
     <main className="app-shell">
@@ -7,9 +9,7 @@ function App() {
         <p className="description">
           A multilingual hiring experience for candidates and recruiters.
         </p>
-        <p className="status" role="status">
-          Voice interaction will be added in a later task.
-        </p>
+        <Recorder />
       </section>
     </main>
   )
