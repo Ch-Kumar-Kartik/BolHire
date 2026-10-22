@@ -6,6 +6,8 @@ from app.services.wav import SAMPLE_RATE
 
 
 class STTProvider(Protocol):
+    """Transcribe bytes of a validated WAV file."""
+
     async def transcribe(self, audio: bytes, language: str) -> str: ...
 
 

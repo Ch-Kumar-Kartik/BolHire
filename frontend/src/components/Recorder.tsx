@@ -62,7 +62,7 @@ function Recorder() {
         const audioBlob = decodeVoiceAudio(result.audio)
         if (audioBlob) nextUrl = URL.createObjectURL(audioBlob)
       } catch {
-        audioWarning = 'Returned mock audio could not be played.'
+        audioWarning = 'Returned audio could not be played.'
       }
       replaceReturnedAudioUrl(nextUrl)
       setReply({ ...result, warning: audioWarning || result.warning })
@@ -86,7 +86,7 @@ function Recorder() {
       <p className="recorder-description">
         Record up to 30 seconds. Submit when ready to send the WAV to the local voice server.
       </p>
-      <p className="mock-notice">STT and TTS are mocked. The transcript is a placeholder and the returned audio is a tone, not spoken speech.</p>
+      <p className="mock-notice">Speech uses the backend's configured provider. In mock mode, the transcript is a placeholder and the audio is a tone. The LLM reply is mocked in both modes.</p>
 
       <label className="language-control">
         Language
@@ -165,10 +165,10 @@ function Recorder() {
       {requestError && <p className="recording-error" role="alert">{requestError}</p>}
       {reply && (
         <div className="voice-response" aria-live="polite">
-          <h3>Mock voice response</h3>
+          <h3>Voice response</h3>
           <p><strong>Transcript:</strong> {reply.transcript}</p>
           <p><strong>Mock LLM reply:</strong> {reply.reply}</p>
-          {replyAudioUrl && <><p>Returned mock audio</p><audio controls src={replyAudioUrl}>Your browser cannot play WAV audio.</audio></>}
+          {replyAudioUrl && <><p>Returned audio</p><audio controls src={replyAudioUrl}>Your browser cannot play WAV audio.</audio></>}
           {reply.warning && <p role="status">{reply.warning}</p>}
         </div>
       )}

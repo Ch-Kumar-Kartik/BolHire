@@ -6,7 +6,7 @@ export interface VoiceReply {
   reply: string
   audio: { mime_type: 'audio/wav'; base64: string } | null
   timings_ms: { stt: number; llm: number; tts: number; total: number }
-  estimated_speech_credits: 0
+  estimated_speech_credits: number | null
   warning?: string | null
 }
 
@@ -67,7 +67,7 @@ export function decodeVoiceAudio(audio: VoiceReply['audio']): Blob | null {
     }
     return new Blob([bytes], { type: audio.mime_type })
   } catch {
-    throw new Error('The server returned invalid mock audio.')
+    throw new Error('The server returned invalid audio.')
   }
 }
 
@@ -80,7 +80,8 @@ function isVoiceReply(value: unknown): value is VoiceReply {
   const audio = value.audio
   return typeof value.session_id === 'string' && value.session_id.length > 0 &&
     typeof value.transcript === 'string' && typeof value.reply === 'string' &&
-    value.estimated_speech_credits === 0 &&
+    (value.estimated_speech_credits === null ||
+      (typeof value.estimated_speech_credits === 'number' && Number.isFinite(value.estimated_speech_credits))) &&
     ['stt', 'llm', 'tts', 'total'].every((key) => typeof (value.timings_ms as Record<string, unknown>)[key] === 'number') &&
     (audio === null || (isRecord(audio) && audio.mime_type === 'audio/wav' && typeof audio.base64 === 'string')) &&
     (value.warning === undefined || value.warning === null || typeof value.warning === 'string')

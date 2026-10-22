@@ -17,3 +17,7 @@ backend/*.egg-info/
 .agents/
 
 local-dev-commands.txt
+
+# Local speech sample for manual smoke testing
+backend/smoke-input.wav
+backend/smoke-output.wav

@@ -70,5 +70,5 @@ class VoiceChatResponse(BaseModel):
     reply: str
     audio: VoiceAudio | None
     timings_ms: VoiceTimingMS
-    estimated_speech_credits: Literal[0] = 0
+    estimated_speech_credits: int | None = 0
     warning: str | None = None

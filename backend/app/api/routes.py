@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.models import TextChatRequest, TextChatResponse, VoiceAudio, VoiceChatResponse, VoiceTimingMS
+from app.providers.gnani import SpeechProviderError
 from app.providers.speech import STTProvider, TTSProvider
 from app.services.pipeline import TextConversationPipeline
 from app.services.wav import MAX_AUDIO_BYTES, validate_wav
@@ -15,7 +16,8 @@ class STTTranscriptionError(Exception):
 
 
 def create_api_router(
-    pipeline: TextConversationPipeline, stt: STTProvider, tts: TTSProvider
+    pipeline: TextConversationPipeline, stt: STTProvider, tts: TTSProvider,
+    estimated_speech_credits: int | None = 0,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
 
@@ -35,12 +37,14 @@ def create_api_router(
     ) -> VoiceChatResponse:
         started = perf_counter()
         payload = await audio.read(MAX_AUDIO_BYTES + 1)
-        pcm = validate_wav(payload)
+        validate_wav(payload)
         stt_started = perf_counter()
         try:
-            transcript = await stt.transcribe(pcm, language)
+            transcript = await stt.transcribe(payload, language)
             if not transcript.strip():
                 raise ValueError("Empty transcript")
+        except SpeechProviderError:
+            raise
         except Exception as error:
             raise STTTranscriptionError from error
         stt_ms = round((perf_counter() - stt_started) * 1000, 2)
@@ -55,8 +59,10 @@ def create_api_router(
             returned_audio = VoiceAudio(
                 mime_type=mime_type, base64=base64.b64encode(synthesized).decode("ascii")
             )
+        except SpeechProviderError as error:
+            warning = f"{error} The text reply was saved."
         except Exception:
-            warning = "Mock audio could not be generated. The text reply was saved."
+            warning = "Audio could not be generated. The text reply was saved."
         tts_ms = round((perf_counter() - tts_started) * 1000, 2)
         return VoiceChatResponse(
             session_id=conversation.session_id,
@@ -67,6 +73,7 @@ def create_api_router(
                 stt=stt_ms, llm=conversation.timings_ms.llm,
                 tts=tts_ms, total=round((perf_counter() - started) * 1000, 2),
             ),
+            estimated_speech_credits=estimated_speech_credits,
             warning=warning,
         )
 

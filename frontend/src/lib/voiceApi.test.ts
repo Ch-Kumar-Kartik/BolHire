@@ -32,10 +32,28 @@ test('reports session errors and malformed successful responses', async () => {
   await assert.rejects(submitVoice(new Blob(), 'en-IN', null), /invalid voice response/)
 })
 
+test('accepts unknown credit estimates from a real speech provider', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    session_id: 'session-1', transcript: 'Hello', reply: 'Mock reply', audio: null,
+    timings_ms: { stt: 1, llm: 2, tts: 3, total: 6 }, estimated_speech_credits: null,
+  }), { status: 200 })
+  const result = await submitVoice(new Blob(), 'en-IN', null)
+  assert.equal(result.estimated_speech_credits, null)
+})
+
 test('decodes WAV audio and rejects malformed audio', () => {
   const header = new Uint8Array(44)
   header.set([82, 73, 70, 70], 0)
   header.set([87, 65, 86, 69], 8)
   assert.equal(decodeVoiceAudio({ mime_type: 'audio/wav', base64: btoa(String.fromCharCode(...header)) })?.type, 'audio/wav')
-  assert.throws(() => decodeVoiceAudio({ mime_type: 'audio/wav', base64: btoa('wrong') }), /invalid mock audio/)
+  assert.throws(() => decodeVoiceAudio({ mime_type: 'audio/wav', base64: btoa('wrong') }), /invalid audio/)
+})
+
+test('keeps normalized TTS WAV bytes and MIME type for browser playback', async () => {
+  const wav = new Uint8Array(46)
+  wav.set([82, 73, 70, 70, 38, 0, 0, 0, 87, 65, 86, 69], 0)
+  wav.set([100, 97, 116, 97, 2, 0, 0, 0], 36)
+  const blob = decodeVoiceAudio({ mime_type: 'audio/wav', base64: btoa(String.fromCharCode(...wav)) })
+  assert.equal(blob?.type, 'audio/wav')
+  assert.deepEqual(new Uint8Array(await blob!.arrayBuffer()), wav)
 })

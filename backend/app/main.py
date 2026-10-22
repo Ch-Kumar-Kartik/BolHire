@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import STTTranscriptionError, create_api_router
+from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
 from app.providers.llm import MockLLMProvider
 from app.providers.speech import MockSTTProvider, MockTTSProvider, STTProvider, TTSProvider
+from app.providers.speech_config import SpeechSettings
 from app.services.pipeline import (
     LLMGenerationError,
     TextConversationPipeline,
@@ -35,6 +37,16 @@ def create_app(
         llm=MockLLMProvider(), sessions=InMemorySessionStore()
     )
     app.state.conversation_pipeline = conversation_pipeline
+    if stt is None or tts is None:
+        settings = SpeechSettings.from_env(os.environ)
+        if settings.provider == "gnani":
+            assert settings.api_key is not None and settings.tts_voice is not None
+            stt = stt or GnaniSTTProvider(settings.api_key)
+            tts = tts or GnaniTTSProvider(settings.api_key, settings.tts_model, settings.tts_voice)
+        else:
+            stt = stt or MockSTTProvider()
+            tts = tts or MockTTSProvider()
+    estimated_credits = 0 if isinstance(stt, MockSTTProvider) and isinstance(tts, MockTTSProvider) else None
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(
@@ -86,12 +98,16 @@ def create_app(
     async def stt_error_handler(_request: Request, _error: STTTranscriptionError) -> JSONResponse:
         return error_response(502, "STT_TRANSCRIPTION_FAILED", "The speech provider could not transcribe audio.")
 
+    @app.exception_handler(SpeechProviderError)
+    async def speech_provider_error_handler(_request: Request, error: SpeechProviderError) -> JSONResponse:
+        return error_response(error.status_code, error.code, str(error))
+
     @app.get("/api/v1/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     app.include_router(create_api_router(
-        conversation_pipeline, stt or MockSTTProvider(), tts or MockTTSProvider()
+        conversation_pipeline, stt, tts, estimated_credits
     ))
     return app
 
