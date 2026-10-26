@@ -1,7 +1,9 @@
 """Server-side selection and validation for speech providers."""
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 TIMBRE_V3_VOICES = frozenset({
     "Avinash", "Shivani", "Lakshmi", "Kalpana", "Shubham", "Prakash",
@@ -35,3 +37,30 @@ class SpeechSettings:
         if voice not in TIMBRE_V3_VOICES:
             raise ValueError("GNANI_TTS_VOICE must be a documented Timbre v3.0 voice.")
         return cls(provider="gnani", api_key=api_key, tts_model=model, tts_voice=voice)
+
+
+@dataclass(frozen=True)
+class SpeechPricing:
+    stt_inr_per_hour: Decimal
+    tts_inr_per_10000_characters: Decimal
+
+    @classmethod
+    def from_env(cls, environment: Mapping[str, str]) -> "SpeechPricing":
+        def rate(name: str) -> Decimal:
+            try:
+                value = Decimal(environment.get(name, "27").strip())
+            except InvalidOperation as error:
+                raise ValueError(f"{name} must be a finite, nonnegative number.") from error
+            if not value.is_finite() or value < 0:
+                raise ValueError(f"{name} must be a finite, nonnegative number.")
+            try:
+                if not math.isfinite(float(value)):
+                    raise ValueError(f"{name} must be a finite, nonnegative number.")
+            except OverflowError as error:
+                raise ValueError(f"{name} must be a finite, nonnegative number.") from error
+            return value
+
+        return cls(
+            stt_inr_per_hour=rate("GNANI_STT_RATE_INR_PER_HOUR"),
+            tts_inr_per_10000_characters=rate("GNANI_TTS_RATE_INR_PER_10000_CHARACTERS"),
+        )

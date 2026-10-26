@@ -9,6 +9,10 @@ function formatDuration(durationSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
+function formatCost(cost: number | null): string {
+  return cost === null ? 'Unavailable' : `₹${cost.toLocaleString('en-IN', { maximumFractionDigits: 8 })}`
+}
+
 function Recorder() {
   const [language, setLanguage] = useState<VoiceLanguage>('en-IN')
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -170,6 +174,27 @@ function Recorder() {
           <p><strong>Mock LLM reply:</strong> {reply.reply}</p>
           {replyAudioUrl && <><p>Returned audio</p><audio controls src={replyAudioUrl}>Your browser cannot play WAV audio.</audio></>}
           {reply.warning && <p role="status">{reply.warning}</p>}
+          <div className="voice-diagnostics">
+            <h4>Request diagnostics</h4>
+            <dl>
+              <dt>STT</dt><dd>{reply.timings_ms.stt.toFixed(2)} ms</dd>
+              <dt>LLM</dt><dd>{reply.timings_ms.llm.toFixed(2)} ms</dd>
+              <dt>TTS</dt><dd>{reply.timings_ms.tts.toFixed(2)} ms</dd>
+              <dt>Backend processing</dt><dd>{reply.timings_ms.total.toFixed(2)} ms</dd>
+              {reply.usage && <>
+                <dt>Input audio</dt><dd>{reply.usage.audio_duration_seconds.toFixed(2)} s</dd>
+                <dt>TTS characters</dt><dd>{reply.usage.tts_characters}</dd>
+                <dt>Speech</dt><dd>{reply.usage.speech_provider} · {reply.usage.language}</dd>
+              </>}
+              {reply.estimated_speech_cost_inr && <>
+                <dt>Estimated speech cost</dt><dd>{formatCost(reply.estimated_speech_cost_inr.total)}</dd>
+                {reply.estimated_speech_cost_inr.total === null && <>
+                  <dt>STT estimate</dt><dd>{formatCost(reply.estimated_speech_cost_inr.stt)}</dd>
+                </>}
+              </>}
+            </dl>
+            <p>{reply.estimated_speech_cost_inr ? 'Estimate from configured rates, not provider billing.' : 'Usage and cost estimates unavailable for this response.'}</p>
+          </div>
         </div>
       )}
     </section>

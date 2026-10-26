@@ -23,6 +23,42 @@ test('posts WAV with language and session only on explicit call', async () => {
   const result = await submitVoice(new Blob(['RIFF'], { type: 'audio/wav' }), 'hi-IN', 'session-1')
   assert.equal(calls, 1)
   assert.equal(result.reply, 'reply')
+  assert.equal(result.usage, undefined)
+  assert.equal(result.estimated_speech_cost_inr, undefined)
+})
+
+test('accepts usage and estimated cost for Gnani and mock responses', async () => {
+  const body = {
+    session_id: 'session-1', transcript: 'नमस्ते', reply: 'नमस्ते 🌼', audio: null,
+    timings_ms: { stt: 15, llm: 25, tts: 35, total: 75 }, estimated_speech_credits: null,
+    usage: { audio_duration_seconds: 1, tts_characters: 8, language: 'hi-IN', speech_provider: 'gnani' },
+    estimated_speech_cost_inr: { stt: 0.0075, tts: 0.0216, total: 0.0291 },
+  }
+  globalThis.fetch = async () => new Response(JSON.stringify(body), { status: 200 })
+  const result = await submitVoice(new Blob(), 'hi-IN', null)
+  assert.deepEqual(result.usage, body.usage)
+  assert.deepEqual(result.estimated_speech_cost_inr, body.estimated_speech_cost_inr)
+
+  body.usage.speech_provider = 'mock'
+  body.estimated_speech_credits = 0
+  body.estimated_speech_cost_inr = { stt: 0, tts: 0, total: 0 }
+  const mock = await submitVoice(new Blob(), 'hi-IN', null)
+  assert.deepEqual(mock.estimated_speech_cost_inr, { stt: 0, tts: 0, total: 0 })
+})
+
+test('accepts unavailable TTS cost after failure and rejects malformed estimates', async () => {
+  const body = {
+    session_id: 'session-1', transcript: 'Hello', reply: 'Reply', audio: null,
+    timings_ms: { stt: 1, llm: 2, tts: 3, total: 6 }, estimated_speech_credits: null,
+    usage: { audio_duration_seconds: 0.1, tts_characters: 5, language: 'en-IN', speech_provider: 'gnani' },
+    estimated_speech_cost_inr: { stt: 0.00075, tts: null, total: null },
+  }
+  globalThis.fetch = async () => new Response(JSON.stringify(body), { status: 200 })
+  assert.equal((await submitVoice(new Blob(), 'en-IN', null)).estimated_speech_cost_inr?.total, null)
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ...body, estimated_speech_cost_inr: { stt: -1, tts: 0, total: 0 },
+  }), { status: 200 })
+  await assert.rejects(submitVoice(new Blob(), 'en-IN', null), /invalid voice response/)
 })
 
 test('reports session errors and malformed successful responses', async () => {

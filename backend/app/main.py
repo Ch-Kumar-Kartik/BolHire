@@ -9,7 +9,7 @@ from app.api.routes import STTTranscriptionError, create_api_router
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
 from app.providers.llm import MockLLMProvider
 from app.providers.speech import MockSTTProvider, MockTTSProvider, STTProvider, TTSProvider
-from app.providers.speech_config import SpeechSettings
+from app.providers.speech_config import SpeechPricing, SpeechSettings
 from app.services.pipeline import (
     LLMGenerationError,
     TextConversationPipeline,
@@ -47,6 +47,8 @@ def create_app(
             stt = stt or MockSTTProvider()
             tts = tts or MockTTSProvider()
     estimated_credits = 0 if isinstance(stt, MockSTTProvider) and isinstance(tts, MockTTSProvider) else None
+    speech_provider = "mock" if estimated_credits == 0 else "gnani"
+    speech_pricing = SpeechPricing.from_env(os.environ)
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(
@@ -107,7 +109,7 @@ def create_app(
         return {"status": "ok"}
 
     app.include_router(create_api_router(
-        conversation_pipeline, stt, tts, estimated_credits
+        conversation_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing
     ))
     return app
 

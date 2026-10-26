@@ -7,6 +7,17 @@ export interface VoiceReply {
   audio: { mime_type: 'audio/wav'; base64: string } | null
   timings_ms: { stt: number; llm: number; tts: number; total: number }
   estimated_speech_credits: number | null
+  usage?: {
+    audio_duration_seconds: number
+    tts_characters: number
+    language: VoiceLanguage
+    speech_provider: 'mock' | 'gnani'
+  }
+  estimated_speech_cost_inr?: {
+    stt: number
+    tts: number | null
+    total: number | null
+  }
   warning?: string | null
 }
 
@@ -78,11 +89,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isVoiceReply(value: unknown): value is VoiceReply {
   if (!isRecord(value) || !isRecord(value.timings_ms)) return false
   const audio = value.audio
+  const usage = value.usage
+  const cost = value.estimated_speech_cost_inr
   return typeof value.session_id === 'string' && value.session_id.length > 0 &&
     typeof value.transcript === 'string' && typeof value.reply === 'string' &&
     (value.estimated_speech_credits === null ||
       (typeof value.estimated_speech_credits === 'number' && Number.isFinite(value.estimated_speech_credits))) &&
     ['stt', 'llm', 'tts', 'total'].every((key) => typeof (value.timings_ms as Record<string, unknown>)[key] === 'number') &&
     (audio === null || (isRecord(audio) && audio.mime_type === 'audio/wav' && typeof audio.base64 === 'string')) &&
+    (usage === undefined || (isRecord(usage) &&
+      typeof usage.audio_duration_seconds === 'number' && Number.isFinite(usage.audio_duration_seconds) && usage.audio_duration_seconds > 0 &&
+      typeof usage.tts_characters === 'number' && Number.isSafeInteger(usage.tts_characters) && usage.tts_characters >= 0 &&
+      (usage.language === 'en-IN' || usage.language === 'hi-IN') &&
+      (usage.speech_provider === 'mock' || usage.speech_provider === 'gnani'))) &&
+    (cost === undefined || (isRecord(cost) &&
+      typeof cost.stt === 'number' && Number.isFinite(cost.stt) && cost.stt >= 0 &&
+      (cost.tts === null || (typeof cost.tts === 'number' && Number.isFinite(cost.tts) && cost.tts >= 0)) &&
+      (cost.total === null || (typeof cost.total === 'number' && Number.isFinite(cost.total) && cost.total >= 0)) &&
+      ((cost.tts === null && cost.total === null) || (cost.tts !== null && cost.total !== null)))) &&
     (value.warning === undefined || value.warning === null || typeof value.warning === 'string')
 }

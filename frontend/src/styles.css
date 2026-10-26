@@ -180,6 +180,12 @@ button:disabled {
 .language-control select { padding: 0.5rem; font: inherit; }
 .submit-control { margin-top: 1rem; }
 .voice-response { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 0.75rem; }
+.voice-diagnostics { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.voice-diagnostics h4 { margin: 0 0 0.5rem; }
+.voice-diagnostics dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 1rem; margin: 0; font-variant-numeric: tabular-nums; }
+.voice-diagnostics dt, .voice-diagnostics p { color: var(--muted); }
+.voice-diagnostics dd { margin: 0; text-align: right; }
+.voice-diagnostics p { margin: 0.5rem 0 0; font-size: 0.875rem; }
 
 .playback p {
   margin: 0.75rem 0;

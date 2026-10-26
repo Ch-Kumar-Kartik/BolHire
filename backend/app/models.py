@@ -64,6 +64,19 @@ class VoiceTimingMS(BaseModel):
     total: float
 
 
+class VoiceUsage(BaseModel):
+    audio_duration_seconds: float
+    tts_characters: int
+    language: Literal["en-IN", "hi-IN"]
+    speech_provider: Literal["mock", "gnani"]
+
+
+class EstimatedSpeechCostINR(BaseModel):
+    stt: float
+    tts: float | None
+    total: float | None
+
+
 class VoiceChatResponse(BaseModel):
     session_id: str
     transcript: str
@@ -71,4 +84,6 @@ class VoiceChatResponse(BaseModel):
     audio: VoiceAudio | None
     timings_ms: VoiceTimingMS
     estimated_speech_credits: int | None = 0
+    usage: VoiceUsage
+    estimated_speech_cost_inr: EstimatedSpeechCostINR
     warning: str | None = None

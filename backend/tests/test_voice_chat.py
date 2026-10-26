@@ -80,7 +80,15 @@ def test_valid_voice_turn_and_continuity():
     assert first["audio"]["mime_type"] == "audio/wav"
     assert validate_wav(base64.b64decode(first["audio"]["base64"]))
     assert first["estimated_speech_credits"] == 0
+    assert first["usage"] == {
+        "audio_duration_seconds": 0.1,
+        "tts_characters": len(first["reply"]),
+        "language": "en-IN",
+        "speech_provider": "mock",
+    }
+    assert first["estimated_speech_cost_inr"] == {"stt": 0, "tts": 0, "total": 0}
     assert set(first["timings_ms"]) == {"stt", "llm", "tts", "total"}
+    assert all(value >= 0 for value in first["timings_ms"].values())
 
 
 @pytest.mark.parametrize("audio", [
@@ -88,7 +96,7 @@ def test_valid_voice_turn_and_continuity():
     wav_bytes(channels=2), wav_bytes(width=1), wav_bytes(seconds=30.1),
     b"x" * (MAX_AUDIO_BYTES + 1),
     wav_bytes()[:-2],
-])
+], ids=lambda audio: f"{len(audio)}-bytes")
 def test_rejects_invalid_audio(audio):
     app, llm, _, _ = setup()
     response = asyncio.run(post(app, audio=audio))
@@ -126,6 +134,8 @@ def test_tts_failure_preserves_text_turn():
     first = asyncio.run(post(app)).json()
     assert first["audio"] is None
     assert first["warning"]
+    assert first["usage"]["tts_characters"] == len(first["reply"])
+    assert first["estimated_speech_cost_inr"] == {"stt": 0, "tts": 0, "total": 0}
     tts.fail = False
     second = asyncio.run(post(app, session_id=first["session_id"])).json()
     assert second["reply"] == "Reply 3"
@@ -148,3 +158,28 @@ def test_concurrent_voice_turns_preserve_history():
     responses = asyncio.run(send())
     assert all(response.status_code == 200 for response in responses)
     assert sorted(len(call) for call in llm.calls[1:]) == [3, 5]
+
+
+def test_voice_timing_boundaries_with_monotonic_clock(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("app.api.routes.perf_counter", lambda: clock[0])
+    monkeypatch.setattr("app.services.pipeline.perf_counter", lambda: clock[0])
+
+    class TimedSTT(MockSTTProvider):
+        async def transcribe(self, audio, language):
+            clock[0] += 0.015
+            return "Hello"
+
+    class TimedLLM:
+        async def generate(self, messages, language):
+            clock[0] += 0.025
+            return "Reply"
+
+    class TimedTTS(MockTTSProvider):
+        async def synthesize(self, text, language):
+            clock[0] += 0.035
+            return await super().synthesize(text, language)
+
+    pipeline = TextConversationPipeline(llm=TimedLLM(), sessions=InMemorySessionStore())
+    response = asyncio.run(post(create_app(pipeline, stt=TimedSTT(), tts=TimedTTS())))
+    assert response.json()["timings_ms"] == {"stt": 15.0, "llm": 25.0, "tts": 35.0, "total": 75.0}

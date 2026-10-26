@@ -10,7 +10,9 @@ import pytest
 
 from app.main import create_app
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError, normalize_tts_wav, validate_tts_wav
-from app.providers.speech_config import SpeechSettings
+from app.providers.speech_config import SpeechPricing, SpeechSettings
+from app.services.pipeline import TextConversationPipeline
+from app.services.sessions import InMemorySessionStore
 from test_voice_chat import post, wav_bytes
 
 
@@ -209,6 +211,68 @@ def test_configuration_defaults_to_mock_without_credentials(monkeypatch):
     assert asyncio.run(post(app)).json()["estimated_speech_credits"] == 0
 
 
+@pytest.mark.parametrize("name", ["GNANI_STT_RATE_INR_PER_HOUR", "GNANI_TTS_RATE_INR_PER_10000_CHARACTERS"])
+@pytest.mark.parametrize("value", ["", "-1", "NaN", "Infinity", "1e9999", "not-a-number"])
+def test_pricing_rejects_invalid_rates(name, value):
+    with pytest.raises(ValueError, match=name):
+        SpeechPricing.from_env({name: value})
+
+
+def test_pricing_defaults_and_accepts_zero():
+    defaults = SpeechPricing.from_env({})
+    assert defaults.stt_inr_per_hour == 27
+    assert defaults.tts_inr_per_10000_characters == 27
+    zero = SpeechPricing.from_env({
+        "GNANI_STT_RATE_INR_PER_HOUR": "0",
+        "GNANI_TTS_RATE_INR_PER_10000_CHARACTERS": "0",
+    })
+    assert zero.stt_inr_per_hour == zero.tts_inr_per_10000_characters == 0
+
+
+def test_gnani_usage_and_configured_cost_for_hindi_without_extra_requests(monkeypatch):
+    monkeypatch.setenv("GNANI_STT_RATE_INR_PER_HOUR", "54")
+    monkeypatch.setenv("GNANI_TTS_RATE_INR_PER_10000_CHARACTERS", "30")
+    calls = {"stt": 0, "tts": 0}
+    reply = "नमस्ते 🌼"
+
+    class HindiLLM:
+        async def generate(self, messages, language):
+            assert language == "hi-IN"
+            return reply
+
+    def stt_handler(_request):
+        calls["stt"] += 1
+        return httpx.Response(200, json={"success": True, "transcript": "नमस्ते"})
+
+    def tts_handler(request):
+        calls["tts"] += 1
+        assert json.loads(request.content)["text"] == reply
+        return httpx.Response(200, headers={"content-type": "audio/wav"}, content=tts_wav())
+
+    pipeline = TextConversationPipeline(llm=HindiLLM(), sessions=InMemorySessionStore())
+    response = asyncio.run(post(
+        create_app(pipeline, stt=stt_provider(stt_handler), tts=tts_provider(tts_handler)),
+        audio=wav_bytes(seconds=1), language="hi-IN",
+    ))
+    body = response.json()
+    assert response.status_code == 200
+    assert body["usage"] == {
+        "audio_duration_seconds": 1.0,
+        "tts_characters": len(reply),
+        "language": "hi-IN",
+        "speech_provider": "gnani",
+    }
+    assert body["estimated_speech_cost_inr"] == {
+        "stt": 0.015,
+        "tts": round(len(reply) * 30 / 10000, 8),
+        "total": round(0.015 + len(reply) * 30 / 10000, 8),
+    }
+    assert body["estimated_speech_credits"] is None
+    assert calls == {"stt": 1, "tts": 1}
+    assert "test-secret" not in response.text
+    assert "RIFF" not in response.text
+
+
 @pytest.mark.parametrize("settings", [
     {"SPEECH_PROVIDER": "gnani"},
     {"SPEECH_PROVIDER": "gnani", "GNANI_API_KEY": "key"},
@@ -242,6 +306,10 @@ def test_real_provider_contract_through_route_and_partial_tts_failure():
     assert first["audio"] is None
     assert "rate limit" in first["warning"]
     assert first["estimated_speech_credits"] is None
+    assert first["usage"]["audio_duration_seconds"] == 0.1
+    assert first["usage"]["tts_characters"] == len(first["reply"])
+    assert first["estimated_speech_cost_inr"] == {"stt": 0.00075, "tts": None, "total": None}
+    assert first["timings_ms"]["tts"] >= 0
     second = asyncio.run(post(app, session_id=first["session_id"])).json()
     assert second["session_id"] == first["session_id"]
     assert "Prior messages supplied: 2." in second["reply"]
@@ -253,3 +321,4 @@ def test_stt_failure_does_not_start_a_turn():
     response = asyncio.run(post(create_app(stt=stt, tts=tts)))
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "GNANI_STT_AUTH_FAILED"
+    assert "usage" not in response.json()

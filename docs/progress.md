@@ -1,16 +1,24 @@
 # Progress
 
+## MVP 0, Task 6: Latency, Usage, and Estimated Speech Cost
+
+Status: implemented with automated tests. The voice response retains `timings_ms` and `estimated_speech_credits` and adds typed `usage` and `estimated_speech_cost_inr` objects. Usage comes from validated input PCM duration, the exact reply sent to TTS, the language, and the selected speech provider. The existing monotonic STT, LLM, TTS, and total route timers remain in place. Total route time starts before upload reading and ends before response serialization; it is not browser round-trip latency.
+
+Gnani cost estimates use configurable server-side rates, defaulting to the observed assumptions of ₹27 per audio hour and ₹27 per 10,000 TTS characters. They are estimates, not provider billing. Mock speech reports zero external speech cost. When Gnani TTS fails, the response retains the completed text turn and reports the STT estimate, while TTS and total cost are unavailable. Older voice responses without the new fields remain usable in the frontend. A compact diagnostics block shows timings, usage, and estimated cost.
+
+Validation: `./.venv/bin/python -m pytest -q` passed (84 backend tests) outside the sandbox, `npm test` passed (2 frontend test files), and `npm run build` passed. All Task 6 provider requests in tests used fakes or mocked HTTP; no live Gnani calls were made. The in-sandbox backend run stalled on the pre-existing large-upload test because AnyIO worker threads did not complete there. `git diff --check` passed. No new browser check of Task 6 diagnostics has been performed.
+
 ## MVP 0, Task 5: Gnani Speech API Integration
 
-Status: implemented with mocked HTTP tests. The user reports that the first live English STT smoke test passed: authentication succeeded, a valid 16 kHz mono PCM WAV was accepted, transcription was accurate, input duration was 7.21 seconds, and STT latency was 1104.97 ms. The user also reports a successful independent live Timbre v3.0 TTS smoke test: HTTP 200 `audio/wav`, 199724 bytes, 48 kHz mono 16-bit PCM, 2.08 seconds, 1175.71 ms latency, and successful ffprobe parsing. Its RIFF and data lengths were both `0xffffffff`. The full browser voice route has not been live-tested.
+Status: implemented with mocked HTTP tests. The user reports that the first live English STT smoke test passed: authentication succeeded, a valid 16 kHz mono PCM WAV was accepted, transcription was accurate, input duration was 7.21 seconds, and STT latency was 1104.97 ms. The user also reports a successful independent live Timbre v3.0 TTS smoke test: HTTP 200 `audio/wav`, 199724 bytes, 48 kHz mono 16-bit PCM, 2.08 seconds, 1175.71 ms latency, and successful ffprobe parsing. Its RIFF and data lengths were both `0xffffffff`. The user subsequently manually verified browser voice interactions in English and Hindi, including session continuity and returned audio playback.
 
-Full-browser preparation: an import-only run with `uv run --env-file ../.env` confirmed Gnani STT/TTS are selected while `MockLLMProvider` remains selected. The configured CORS origin matches local Vite at `http://localhost:5173`. Gnani's validated placeholder-length WAV is now normalized to concrete RIFF and data lengths before the API returns it, preserving the PCM payload. Synthetic provider and route tests cover the normalized `audio/wav` response. Browser playback remains a manual verification item; no live request was made during this preparation.
+Full-browser preparation: an import-only run with `uv run --env-file ../.env` confirmed Gnani STT/TTS are selected while `MockLLMProvider` remains selected. The configured CORS origin matches local Vite at `http://localhost:5173`. Gnani's validated placeholder-length WAV is now normalized to concrete RIFF and data lengths before the API returns it, preserving the PCM payload. Synthetic provider and route tests cover the normalized `audio/wav` response. No live request was made during this preparation; browser playback was verified later as reported above.
 
 Preparation validation: `uv run pytest -q` passed (69 backend tests), `npm test` passed (2 frontend test files), `npm run build` passed, and `git diff --check` passed. No frontend media element was manually exercised in this preparation.
 
 Task 5B preparation: `backend/scripts/tts_smoke.py` provides a no-request `--check` mode and a single-request `--run --confirm-billable` mode. It uses the configured Timbre v3.0 voice, verifies non-empty 48 kHz mono PCM WAV output, reports synthesis latency and duration, and saves to the Git-ignored `backend/smoke-output.wav` by default without overwriting an existing result. The runner never invokes STT or the LLM.
 
-Task 5B checks: the root `.env` passed `uv run --env-file ../.env python -m scripts.tts_smoke --check` without an API request or audio output. Backend pytest, frontend tests/build, and `git diff --check` passed at that stage. The subsequent live TTS result was reported by the user; in-browser playback and credit usage remain unverified.
+Task 5B checks: the root `.env` passed `uv run --env-file ../.env python -m scripts.tts_smoke --check` without an API request or audio output. Backend pytest, frontend tests/build, and `git diff --check` passed at that stage. The subsequent live TTS result was reported by the user; provider credit usage remained unverified. Browser playback was verified later as reported above.
 
 Task 5B first live attempt, reported by the user: configuration passed, but TTS returned `GNANI_TTS_INVALID_RESPONSE` with "Gnani returned incomplete WAV audio" after 1371.73 ms; no file was saved. That message came from the adapter's former exact RIFF-size equality check. The later successful diagnostic test established that Gnani uses `0xffffffff` placeholder sizes for this WAV response. The adapter accepts these placeholders, validates concrete chunks and non-empty 48 kHz mono 16-bit PCM, and still rejects contradictory lengths or detectable truncation. An explicitly gated `--diagnostic` mode prints only safe response metadata. A response using placeholder sizes can still be physically truncated by a whole PCM frame without a declared length; that is not provable from WAV bytes alone.
 
@@ -29,7 +37,7 @@ Configuration: export `SPEECH_PROVIDER=gnani`, `GNANI_API_KEY`, and `GNANI_TTS_V
 
 Provider contracts: [Gnani STT REST](https://docs.gnani.ai/api/STT/speech-to-text), [Gnani TTS REST](https://docs.gnani.ai/api/TTS/tts-inference), and [Timbre v3.0 voice catalog](https://docs.gnani.ai/api/TTS/available-voices).
 
-Further live verification remains pending. Before each billable manual request, obtain explicit permission. Hindi STT and the full browser voice route have not yet been verified. Confirm transcription, returned text, session continuity, and browser WAV playback. The browser voice route invokes both STT and TTS on every submission, so count both billable stages when planning the test.
+The user reports that Task 5 browser verification is complete in English and Hindi. Each browser voice submission invokes both billable STT and TTS stages.
 
 ## MVP 0, Task 4: Mock Voice Pipeline
 
