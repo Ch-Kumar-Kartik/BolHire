@@ -1,7 +1,7 @@
 from time import perf_counter
 
 from app.models import ConversationMessage, TextChatResponse, TimingMS
-from app.providers.llm import LLMProvider
+from app.providers.llm import LLMProvider, LLMProviderError
 from app.services.sessions import InMemorySessionStore
 
 
@@ -48,6 +48,8 @@ class TextConversationPipeline:
         started_at = perf_counter()
         try:
             reply = await self._llm.generate(messages, language)
+        except LLMProviderError:
+            raise
         except Exception as error:
             raise LLMGenerationError from error
         return reply, round((perf_counter() - started_at) * 1000, 2)

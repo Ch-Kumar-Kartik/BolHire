@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -6,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import STTTranscriptionError, create_api_router
+from app.providers.gemini import GeminiLLMProvider
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
-from app.providers.llm import MockLLMProvider
+from app.providers.llm import LLMProviderError, MockLLMProvider
+from app.providers.llm_config import LLMSettings
 from app.providers.speech import MockSTTProvider, MockTTSProvider, STTProvider, TTSProvider
 from app.providers.speech_config import SpeechPricing, SpeechSettings
 from app.services.pipeline import (
@@ -26,29 +29,49 @@ def create_app(
     pipeline: TextConversationPipeline | None = None,
     *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="BolHire API")
+    speech_settings = SpeechSettings.from_env(os.environ) if stt is None or tts is None else None
+    speech_pricing = SpeechPricing.from_env(os.environ)
+    gemini_provider: GeminiLLMProvider | None = None
+    if pipeline is None:
+        llm_settings = LLMSettings.from_env(os.environ)
+        if llm_settings.provider == "gemini":
+            gemini_provider = GeminiLLMProvider(llm_settings)
+            llm = gemini_provider
+        else:
+            llm = MockLLMProvider()
+        conversation_pipeline = TextConversationPipeline(
+            llm=llm, sessions=InMemorySessionStore()
+        )
+    else:
+        conversation_pipeline = pipeline
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            if gemini_provider is not None:
+                await gemini_provider.aclose()
+
+    app = FastAPI(title="BolHire API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[os.getenv("BACKEND_CORS_ORIGIN", "http://localhost:5173")],
         allow_methods=["POST", "GET"],
         allow_headers=["*"],
     )
-    conversation_pipeline = pipeline or TextConversationPipeline(
-        llm=MockLLMProvider(), sessions=InMemorySessionStore()
-    )
     app.state.conversation_pipeline = conversation_pipeline
     if stt is None or tts is None:
-        settings = SpeechSettings.from_env(os.environ)
-        if settings.provider == "gnani":
-            assert settings.api_key is not None and settings.tts_voice is not None
-            stt = stt or GnaniSTTProvider(settings.api_key)
-            tts = tts or GnaniTTSProvider(settings.api_key, settings.tts_model, settings.tts_voice)
+        assert speech_settings is not None
+        if speech_settings.provider == "gnani":
+            assert speech_settings.api_key is not None and speech_settings.tts_voice is not None
+            stt = stt or GnaniSTTProvider(speech_settings.api_key)
+            tts = tts or GnaniTTSProvider(speech_settings.api_key, speech_settings.tts_model, speech_settings.tts_voice)
         else:
             stt = stt or MockSTTProvider()
             tts = tts or MockTTSProvider()
     estimated_credits = 0 if isinstance(stt, MockSTTProvider) and isinstance(tts, MockTTSProvider) else None
     speech_provider = "mock" if estimated_credits == 0 else "gnani"
-    speech_pricing = SpeechPricing.from_env(os.environ)
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(
@@ -91,6 +114,12 @@ def create_app(
         return error_response(
             502, "LLM_GENERATION_FAILED", "The conversation provider could not reply."
         )
+
+    @app.exception_handler(LLMProviderError)
+    async def llm_provider_error_handler(
+        _request: Request, error: LLMProviderError
+    ) -> JSONResponse:
+        return error_response(error.status_code, error.code, str(error))
 
     @app.exception_handler(InvalidAudioError)
     async def invalid_audio_handler(_request: Request, error: InvalidAudioError) -> JSONResponse:
