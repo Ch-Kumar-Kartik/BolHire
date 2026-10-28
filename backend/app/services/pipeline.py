@@ -14,6 +14,14 @@ class TextConversationPipeline:
         self._llm = llm
         self._sessions = sessions
 
+    @property
+    def llm(self) -> LLMProvider:
+        return self._llm
+
+    @property
+    def sessions(self) -> InMemorySessionStore:
+        return self._sessions
+
     async def respond(
         self, *, session_id: str | None, text: str, language: str
     ) -> TextChatResponse:

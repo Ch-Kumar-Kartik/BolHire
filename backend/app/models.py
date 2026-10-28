@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import PydanticCustomError
 
 SUPPORTED_LANGUAGES = frozenset({"en-IN", "hi-IN"})
+Workflow = Literal["general", "candidate_intake"]
 
 
 class ConversationMessage(BaseModel):
@@ -17,6 +18,7 @@ class TextChatRequest(BaseModel):
     session_id: str | None = None
     text: str
     language: str
+    workflow: Workflow = "general"
 
     @field_validator("text")
     @classmethod

@@ -1,3 +1,5 @@
+import type { VoiceWorkflow } from './conversationSelection'
+
 export type VoiceLanguage = 'en-IN' | 'hi-IN'
 
 export interface VoiceReply {
@@ -27,10 +29,12 @@ export async function submitVoice(
   blob: Blob,
   language: VoiceLanguage,
   sessionId: string | null,
+  workflow: VoiceWorkflow = 'general',
 ): Promise<VoiceReply> {
   const form = new FormData()
   form.append('audio', blob, 'recording.wav')
   form.append('language', language)
+  form.append('workflow', workflow)
   if (sessionId) form.append('session_id', sessionId)
 
   let response: Response

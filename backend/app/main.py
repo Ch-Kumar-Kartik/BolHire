@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import STTTranscriptionError, create_api_router
+from app.api.dev_profile import create_dev_profile_router
+from app.services.candidate_intake import CandidateIntakePipeline
 from app.providers.gemini import GeminiLLMProvider
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
 from app.providers.llm import LLMProviderError, MockLLMProvider
@@ -21,6 +23,7 @@ from app.services.sessions import (
     InMemorySessionStore,
     SessionExpiredError,
     SessionNotFoundError,
+    SessionWorkflowMismatchError,
 )
 from app.services.wav import InvalidAudioError
 
@@ -28,6 +31,7 @@ from app.services.wav import InvalidAudioError
 def create_app(
     pipeline: TextConversationPipeline | None = None,
     *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
+    intake: CandidateIntakePipeline | None = None,
 ) -> FastAPI:
     speech_settings = SpeechSettings.from_env(os.environ) if stt is None or tts is None else None
     speech_pricing = SpeechPricing.from_env(os.environ)
@@ -44,6 +48,11 @@ def create_app(
         )
     else:
         conversation_pipeline = pipeline
+    intake_pipeline = intake or CandidateIntakePipeline(
+        generator=conversation_pipeline.llm, sessions=conversation_pipeline.sessions,
+    )
+    if intake_pipeline.sessions is not conversation_pipeline.sessions:
+        raise ValueError("General chat and candidate intake must share one session store.")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -61,6 +70,9 @@ def create_app(
         allow_headers=["*"],
     )
     app.state.conversation_pipeline = conversation_pipeline
+    app.state.candidate_intake_pipeline = intake_pipeline
+    if os.getenv("BOLHIRE_DEV_PROFILE_INSPECTION") == "1":
+        app.include_router(create_dev_profile_router(conversation_pipeline.sessions))
     if stt is None or tts is None:
         assert speech_settings is not None
         if speech_settings.provider == "gnani":
@@ -89,6 +101,11 @@ def create_app(
             for item in error.errors()
         ):
             return error_response(422, "UNSUPPORTED_LANGUAGE", "Supported languages are en-IN and hi-IN.")
+        if any(
+            item["type"] == "literal_error" and item["loc"][-1] == "workflow"
+            for item in error.errors()
+        ):
+            return error_response(422, "UNSUPPORTED_WORKFLOW", "Supported workflows are general and candidate_intake.")
         if "json_invalid" in error_types:
             return error_response(400, "MALFORMED_JSON", "Request body must be valid JSON.")
         return error_response(422, "INVALID_REQUEST", "Request data is invalid.")
@@ -106,6 +123,12 @@ def create_app(
         return error_response(
             410, "SESSION_EXPIRED", "Session expired. Start a new conversation."
         )
+
+    @app.exception_handler(SessionWorkflowMismatchError)
+    async def workflow_mismatch_handler(
+        _request: Request, _error: SessionWorkflowMismatchError
+    ) -> JSONResponse:
+        return error_response(409, "SESSION_WORKFLOW_MISMATCH", "Start a new conversation to change workflow.")
 
     @app.exception_handler(LLMGenerationError)
     async def llm_generation_handler(
@@ -138,7 +161,7 @@ def create_app(
         return {"status": "ok"}
 
     app.include_router(create_api_router(
-        conversation_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing
+        conversation_pipeline, intake_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing
     ))
     return app
 

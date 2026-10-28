@@ -7,12 +7,13 @@ from fastapi import APIRouter, File, Form, UploadFile
 
 from app.models import (
     EstimatedSpeechCostINR, TextChatRequest, TextChatResponse, VoiceAudio,
-    VoiceChatResponse, VoiceTimingMS, VoiceUsage,
+    VoiceChatResponse, VoiceTimingMS, VoiceUsage, Workflow,
 )
 from app.providers.gnani import SpeechProviderError
 from app.providers.speech import STTProvider, TTSProvider
 from app.providers.speech_config import SpeechPricing
 from app.services.pipeline import TextConversationPipeline
+from app.services.candidate_intake import CandidateIntakePipeline
 from app.services.wav import MAX_AUDIO_BYTES, SAMPLE_RATE, validate_wav
 
 
@@ -21,7 +22,8 @@ class STTTranscriptionError(Exception):
 
 
 def create_api_router(
-    pipeline: TextConversationPipeline, stt: STTProvider, tts: TTSProvider,
+    pipeline: TextConversationPipeline, intake: CandidateIntakePipeline,
+    stt: STTProvider, tts: TTSProvider,
     estimated_speech_credits: int | None,
     speech_provider: Literal["mock", "gnani"],
     speech_pricing: SpeechPricing,
@@ -30,7 +32,8 @@ def create_api_router(
 
     @router.post("/chat/text", response_model=TextChatResponse)
     async def text_chat(request: TextChatRequest) -> TextChatResponse:
-        return await pipeline.respond(
+        selected = intake if request.workflow == "candidate_intake" else pipeline
+        return await selected.respond(
             session_id=request.session_id,
             text=request.text,
             language=request.language,
@@ -41,6 +44,7 @@ def create_api_router(
         audio: UploadFile = File(...),
         language: Literal["en-IN", "hi-IN"] = Form(...),
         session_id: str | None = Form(None),
+        workflow: Workflow = Form("general"),
     ) -> VoiceChatResponse:
         started = perf_counter()
         payload = await audio.read(MAX_AUDIO_BYTES + 1)
@@ -56,7 +60,8 @@ def create_api_router(
         except Exception as error:
             raise STTTranscriptionError from error
         stt_ms = round((perf_counter() - stt_started) * 1000, 2)
-        conversation = await pipeline.respond(
+        selected = intake if workflow == "candidate_intake" else pipeline
+        conversation = await selected.respond(
             session_id=session_id, text=transcript, language=language
         )
         tts_started = perf_counter()

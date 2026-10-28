@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
+import { selectWorkflow, type ConversationSelection, type VoiceWorkflow } from '../lib/conversationSelection'
 import { decodeVoiceAudio, submitVoice, VoiceApiError, type VoiceLanguage, type VoiceReply } from '../lib/voiceApi'
 
 function formatDuration(durationSeconds: number): string {
@@ -15,7 +16,7 @@ function formatCost(cost: number | null): string {
 
 function Recorder() {
   const [language, setLanguage] = useState<VoiceLanguage>('en-IN')
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [conversation, setConversation] = useState<ConversationSelection>({ workflow: 'general', sessionId: null })
   const [reply, setReply] = useState<VoiceReply | null>(null)
   const [replyAudioUrl, setReplyAudioUrl] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
@@ -49,8 +50,14 @@ function Recorder() {
     clearRecording()
     replaceReturnedAudioUrl(null)
     setReply(null)
-    setSessionId(null)
+    setConversation((current) => ({ ...current, sessionId: null }))
     setRequestError(null)
+  }
+
+  function handleWorkflowChange(nextWorkflow: VoiceWorkflow) {
+    if (nextWorkflow === conversation.workflow) return
+    handleNewConversation()
+    setConversation((current) => selectWorkflow(current, nextWorkflow))
   }
 
   async function handleSubmit() {
@@ -59,7 +66,7 @@ function Recorder() {
     setSubmitting(true)
     setRequestError(null)
     try {
-      const result = await submitVoice(recording.blob, language, sessionId)
+      const result = await submitVoice(recording.blob, language, conversation.sessionId, conversation.workflow)
       let nextUrl: string | null = null
       let audioWarning: string | null = null
       try {
@@ -70,10 +77,10 @@ function Recorder() {
       }
       replaceReturnedAudioUrl(nextUrl)
       setReply({ ...result, warning: audioWarning || result.warning })
-      setSessionId(result.session_id)
+      setConversation((current) => ({ ...current, sessionId: result.session_id }))
     } catch (error) {
-      if (error instanceof VoiceApiError && ['SESSION_NOT_FOUND', 'SESSION_EXPIRED'].includes(error.code)) {
-        setSessionId(null)
+      if (error instanceof VoiceApiError && ['SESSION_NOT_FOUND', 'SESSION_EXPIRED', 'SESSION_WORKFLOW_MISMATCH'].includes(error.code)) {
+        setConversation((current) => ({ ...current, sessionId: null }))
         setRequestError(`${error.message} Submit the recording again to start a new conversation.`)
       } else {
         setRequestError(error instanceof Error ? error.message : 'Voice request failed.')
@@ -91,6 +98,14 @@ function Recorder() {
         Record up to 30 seconds. Submit when ready to send the WAV to the local voice server.
       </p>
       <p className="mock-notice">Speech and conversation use the backend's configured providers. In mock speech mode, the transcript is a placeholder and the audio is a tone.</p>
+
+      <label className="language-control">
+        Conversation mode
+        <select value={conversation.workflow} onChange={(event) => handleWorkflowChange(event.target.value as VoiceWorkflow)} disabled={isRecording || isBusy || submitting}>
+          <option value="general">General Chat</option>
+          <option value="candidate_intake">Candidate Intake</option>
+        </select>
+      </label>
 
       <label className="language-control">
         Language

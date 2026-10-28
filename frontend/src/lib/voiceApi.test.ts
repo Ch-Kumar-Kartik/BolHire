@@ -12,6 +12,7 @@ test('posts WAV with language and session only on explicit call', async () => {
     calls += 1
     const form = options?.body as FormData
     assert.equal(form.get('language'), 'hi-IN')
+    assert.equal(form.get('workflow'), 'general')
     assert.equal(form.get('session_id'), 'session-1')
     assert.equal((form.get('audio') as File).type, 'audio/wav')
     return new Response(JSON.stringify({
@@ -25,6 +26,20 @@ test('posts WAV with language and session only on explicit call', async () => {
   assert.equal(result.reply, 'reply')
   assert.equal(result.usage, undefined)
   assert.equal(result.estimated_speech_cost_inr, undefined)
+})
+
+test('sends candidate intake workflow with voice requests', async () => {
+  globalThis.fetch = async (_url, options) => {
+    const form = options?.body as FormData
+    assert.equal(form.get('workflow'), 'candidate_intake')
+    assert.equal(form.get('session_id'), null)
+    return new Response(JSON.stringify({
+      session_id: 'intake-1', transcript: 'Asha', reply: 'Got it.', audio: null,
+      timings_ms: { stt: 1, llm: 2, tts: 3, total: 6 }, estimated_speech_credits: 0,
+    }), { status: 200 })
+  }
+  const reply = await submitVoice(new Blob(), 'en-IN', null, 'candidate_intake')
+  assert.equal(reply.session_id, 'intake-1')
 })
 
 test('accepts usage and estimated cost for Gnani and mock responses', async () => {
