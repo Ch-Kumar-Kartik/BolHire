@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import STTTranscriptionError, create_api_router
 from app.api.dev_profile import create_dev_profile_router
+from app.db.config import DatabaseSettings
+from app.db.database import Database
 from app.services.candidate_intake import CandidateIntakePipeline
 from app.providers.gemini import GeminiLLMProvider
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
@@ -33,6 +35,7 @@ def create_app(
     *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
     intake: CandidateIntakePipeline | None = None,
 ) -> FastAPI:
+    database_settings = DatabaseSettings.from_env(os.environ)
     speech_settings = SpeechSettings.from_env(os.environ) if stt is None or tts is None else None
     speech_pricing = SpeechPricing.from_env(os.environ)
     gemini_provider: GeminiLLMProvider | None = None
@@ -56,11 +59,22 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        database = None
+        _app.state.database = None
         try:
+            if database_settings.enabled:
+                database = Database(database_settings)
+                await database.check_connection()
+                _app.state.database = database
             yield
         finally:
-            if gemini_provider is not None:
-                await gemini_provider.aclose()
+            try:
+                if database is not None:
+                    await database.close()
+            finally:
+                _app.state.database = None
+                if gemini_provider is not None:
+                    await gemini_provider.aclose()
 
     app = FastAPI(title="BolHire API", lifespan=lifespan)
     app.add_middleware(

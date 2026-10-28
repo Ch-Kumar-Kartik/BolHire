@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "BolHire API"
 requires-python = ">=3.14"
 dependencies = [
+  "alembic>=1.16,<2",
   "fastapi>=0.115",
   "google-genai>=2.33.0",
   "httpx>=0.28.1",
+  "psycopg[binary]>=3.2.10,<4",
   "python-multipart>=0.0.32",
+  "sqlalchemy[asyncio]>=2.0.44,<2.1",
   "uvicorn[standard]>=0.30",
 ]
 
@@ -19,3 +22,4 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["integration: requires explicitly configured disposable local PostgreSQL 17"]

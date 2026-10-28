@@ -18,6 +18,21 @@
 
 ## Backend
 
+### Optional database foundation (Task 9.1)
+
+- `backend/app/db/config.py`: explicit opt-in environment validation with safe URL handling.
+- `backend/app/db/database.py`: async engine/session factory, bounded connectivity check, disposal.
+- `backend/app/db/models.py`: candidate, profile, and future auth-session table structure and constraints.
+- `backend/app/db/mapping.py`: strict profile conversion and immutable saved-profile results.
+- `backend/app/db/candidate_repository.py`: transaction-scoped create/read/replace/delete, expiry filtering, revision conflicts, safe storage errors.
+- `backend/alembic.ini`, `backend/alembic/`: explicit migrations; independent initial schema snapshot and array validation functions. Never invoked at app startup.
+- `backend/tests/test_database_config.py`, `backend/tests/test_candidate_mapping.py`: offline configuration/lifecycle and mapping tests.
+- `backend/tests/integration/`: isolated local PostgreSQL 17 migration, constraint, repository, concurrency, and lifecycle tests.
+- `compose.test.yaml`: loopback-only disposable PostgreSQL 17 using tmpfs.
+- `docs/database-development.md`: configuration, migration, repository semantics, and local test instructions.
+
+### Application and existing workflows
+
 - `backend/app/api/dev_profile.py`: explicitly enabled loopback-only profile inspection without provider calls or activity refresh; see `docs/local-profile-verification.md`.
 - `backend/tests/test_dev_profile.py`: offline access restrictions, profile serialization, expiry, and mutation/provider-call checks.
 
