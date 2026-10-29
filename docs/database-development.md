@@ -1,6 +1,6 @@
 # Task 9.1 database foundation
 
-PostgreSQL storage is an internal foundation only. No save, authentication, or resume routes exist yet. Conversation history, candidate-intake behavior, provider selection, and speech remain unchanged. The authentication table contains only future credential storage structure; no authentication logic is implemented.
+PostgreSQL storage is optional. No save, resume, or profile routes exist yet; the only candidate-facing routes are the Task 9.2 authentication routes (see the authentication section below). Conversation history, candidate-intake behavior, provider selection, and speech remain unchanged.
 
 ## Configuration and lifecycle
 
@@ -56,9 +56,9 @@ docker compose --env-file .env.test -f compose.test.yaml down
 
 ## Schema, mapping, and repository semantics
 
-- `candidates`: application-generated UUID, unique 32-byte recovery verifier supplied by a future caller, creation timestamp.
+- `candidates`: application-generated UUID, unique 32-byte recovery verifier (a domain-separated SHA-256 of the recovery key; the key itself is never stored), creation timestamp. It has no expiry of its own: an identity lives exactly as long as its profile.
 - `candidate_profiles`: one row per candidate, cascading foreign key, all existing profile fields, positive revision, consent notice version, consent/creation/update/expiry timestamps.
-- `candidate_auth_sessions`: UUID, cascading owner foreign key, unique 32-byte token verifier, creation/expiry timestamps. Schema only.
+- `candidate_auth_sessions`: UUID, cascading owner foreign key, unique 32-byte token verifier (SHA-256 of the cookie token), creation/expiry timestamps. Used by `AuthRepository` since Task 9.2.
 
 Experience uses double precision; timestamps use TIMESTAMPTZ. Skills and declined fields use PostgreSQL text arrays. `NULL` skills map exactly to `None`; an empty array maps to `()`; ordered skills retain their order. Declined fields map to a frozenset. Writes and reads use the existing strict `CandidateProfile` validation without changing it. Database constraints additionally reject malformed arrays, null array elements, overlength values, unknown modes/declines, invalid numeric ranges, conflicting declines, invalid hashes, and invalid lifecycle timestamps. Exact Unicode case folding remains a Python rule; SQL checks reject exact duplicate skills, and reads reject data that violates full Pydantic validation.
 
@@ -66,4 +66,23 @@ Experience uses double precision; timestamps use TIMESTAMPTZ. Skills and decline
 
 Replace requires the expected revision and increments it in the same conditional SQL update. Concurrent saves of one revision yield one winner and one conflict. Missing and expired profiles share a safe not-found error and cannot be revived through replacement. Every read/update filters expiry using PostgreSQL `statement_timestamp()`; eligibility is evaluated at statement start. Reads do not refresh activity/retention or physically purge data. Database transaction atomicity applies only to database writes, independently of the existing in-memory session atomicity.
 
-Constraint/data failures roll back with a fixed repository error. Connectivity failures return a separate fixed error; raw SQL exceptions are not propagated. Retry after an uncertain commit requires later save/idempotency design; no HTTP save flow is included here.
+Constraint/data failures roll back with a fixed repository error. Connectivity failures return a separate fixed error; raw SQL exceptions are not propagated. `create` is not idempotent and is superseded by `register` (below), which is safe to retry after an uncertain commit. No HTTP save flow exists yet.
+
+## Candidate authentication (Task 9.2)
+
+Authentication runs only when the database is enabled; otherwise every auth route returns 503 `CANDIDATE_STORAGE_DISABLED` and chat is unaffected. Configuration (read only when `DATABASE_ENABLED=1`):
+- `AUTH_TRUSTED_ORIGIN`: the exact browser origin, e.g. `https://app.example.com`. Default ports (`:443` for https, `:80` for http) are dropped, because browsers never send them. Paths, credentials, port 0, and an empty port are rejected. Unset rejects every state-changing request. A non-loopback `http` origin is rejected.
+- `AUTH_COOKIE_SECURE`: default `1`. `0` is accepted only together with an `http` origin on a loopback host (local development) and drops the `__Host-` cookie prefix; any other combination fails at startup.
+- `AUTH_TRUSTED_PROXY_HOPS`: default `0`. See the rate-limit deployment gate below before changing it.
+
+- **Credentials:** a recovery key is 128 random bits shown as 26 Crockford-base32 characters; a session token is 256 random bits carried only in the `HttpOnly; Secure; SameSite=Strict` cookie. Only SHA-256 verifiers with distinct domain prefixes are stored.
+- **Lifecycle:** identity lifetime equals profile lifetime. Login and session resolution require an unexpired profile using the database clock, so expired identities are inaccessible even if cleanup is delayed. Sessions have a fixed 7-day maximum with no renewal. Logout deletes the row and is idempotent. Logging in again does not revoke earlier sessions (accepted for the MVP): the previous session stays valid until it expires or is logged out.
+- **Origin protection:** one router-level guard, `enforce_trusted_origin`, requires an exactly matching `Origin` header on every method except GET/HEAD/OPTIONS. Install it on every router that holds state-changing candidate routes.
+- **Identity creation is not implemented here.** The 9.1 `create` is the only creator and is not retry-safe. Task 9.3 must provide idempotent, reclaim-aware creation; its requirements are listed in `docs/progress.md`.
+- **Cleanup:** run `uv run python -m scripts.purge_expired_candidates --check` to validate configuration offline, then `--run --confirm-delete` from a scheduled job (Railway scheduling is unconfirmed). It is safe to run concurrently and repeatedly and skips rows locked by other transactions. Output is counts only. A failure exits 2 and prints the stage (`connecting` or `purging`) and the exception class name; the message is withheld because driver errors can contain hosts or credentials, so diagnose further with `--check` and a separate connectivity test.
+- **Never log or expose** recovery keys, tokens, cookies, or verifiers. Keys travel only in JSON request bodies, never in URLs or headers.
+- **Login rate limit:** one per-client bucket, process-local, best-effort load protection; key entropy is the real defence. Deployment gate (nothing is established yet):
+  - The real forwarding-header chain between the browser, Vercel, and the backend must be observed before any hop is trusted.
+  - With `AUTH_TRUSTED_PROXY_HOPS=0` behind a proxy, all users share one bucket and a single caller can block everyone's login.
+  - Setting the hop count does not make a directly reachable backend safe: a caller who reaches the Railway URL directly can forge the entries to the left of the trusted ones. Whether direct access must be restricted is a separate deployment decision.
+  - Several workers or instances multiply the limit.

@@ -22,7 +22,7 @@ Development is divided into approved milestones. The current implementation scop
 
 Read these resources:
 
-1. `AGENTS.md`: Project-wide engineering rules.
+1. `CLAUDE.md`: Project-wide engineering rules.
 2. `docs/progress.md`: Current implementation state and milestone.
 3. `docs/codebase-map.md`: Module responsibilities and relevant files.
 4. `docs/architecture.md`: System architecture and design decisions.
@@ -104,7 +104,7 @@ Do not duplicate the entire conversation history.
 
 - Source code: Actual implementation.
 - Git history: Committed changes.
-- `AGENTS.md`: Engineering rules.
+- `CLAUDE.md`: Engineering rules.
 - `docs/architecture.md`: Architectural decisions.
 - `docs/progress.md`: Milestone status and handoff.
 - `docs/codebase-map.md`: Navigation guide.

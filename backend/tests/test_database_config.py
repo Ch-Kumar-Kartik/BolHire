@@ -38,6 +38,8 @@ def test_application_database_lifecycle(monkeypatch, enabled, fail):
     calls = []
 
     class FakeDatabase:
+        sessions = object()  # the lifespan hands the real session factory to the auth repository
+
         def __init__(self, settings):
             calls.append("create")
 

@@ -22,9 +22,15 @@
 
 - `backend/app/db/config.py`: explicit opt-in environment validation with safe URL handling.
 - `backend/app/db/database.py`: async engine/session factory, bounded connectivity check, disposal.
-- `backend/app/db/models.py`: candidate, profile, and future auth-session table structure and constraints.
+- `backend/app/db/models.py`: candidate, profile, and auth-session table structure and constraints.
 - `backend/app/db/mapping.py`: strict profile conversion and immutable saved-profile results.
 - `backend/app/db/candidate_repository.py`: transaction-scoped create/read/replace/delete, expiry filtering, revision conflicts, safe storage errors.
+- `backend/app/db/auth_repository.py` (Task 9.2): login-session insert, expiry-checked session resolution, revocation, and batched expired-identity purge.
+- `backend/app/services/candidate_auth.py` (Task 9.2): recovery-key and session-token primitives, verifiers, Origin and cookie rules, `AuthSettings`.
+- `backend/app/services/rate_limit.py` (Task 9.2): process-local per-client sliding-window limiter and client-address selection (deployment-dependent; see `docs/database-development.md`).
+- `backend/app/api/auth.py` (Task 9.2): login, logout, session-status routes, the `require_candidate` principal dependency, and the router-level `enforce_trusted_origin` guard.
+- `backend/scripts/purge_expired_candidates.py` (Task 9.2): scheduled-job entry point for physical cleanup.
+- `backend/tests/test_candidate_auth.py`, `test_candidate_auth_api.py`, `test_rate_limit.py`, `test_purge_script.py`: offline auth tests. `backend/tests/integration/test_auth_repository.py`, `test_auth_api.py`, `test_purge_script_database.py`: PostgreSQL session, cleanup, and API tests. `test_auth_concurrency.py`: deterministic lock-based interleavings for login and cleanup.
 - `backend/alembic.ini`, `backend/alembic/`: explicit migrations; independent initial schema snapshot and array validation functions. Never invoked at app startup.
 - `backend/tests/test_database_config.py`, `backend/tests/test_candidate_mapping.py`: offline configuration/lifecycle and mapping tests.
 - `backend/tests/integration/`: isolated local PostgreSQL 17 migration, constraint, repository, concurrency, and lifecycle tests.
@@ -36,7 +42,7 @@
 - `backend/app/api/dev_profile.py`: explicitly enabled loopback-only profile inspection without provider calls or activity refresh; see `docs/local-profile-verification.md`.
 - `backend/tests/test_dev_profile.py`: offline access restrictions, profile serialization, expiry, and mutation/provider-call checks.
 
-- `backend/app/main.py`: FastAPI application factory, shared general/intake session wiring, independent speech and LLM provider selection, Gemini client shutdown, health endpoint, pricing selection, and stable error handlers.
+- `backend/app/main.py`: FastAPI application factory (also wires auth settings, the auth repository when the database is enabled, login limiters, and the auth error handler), shared general/intake session wiring, independent speech and LLM provider selection, Gemini client shutdown, health endpoint, pricing selection, and stable error handlers.
 - `backend/app/api/routes.py`: workflow selection in existing text and multipart voice routes, voice usage extraction, and estimated speech cost calculation.
 - `backend/app/models.py`: text and voice response models, optional text workflow selection, typed voice usage and cost estimates, and conversation-message models.
 - `backend/app/providers/llm.py`: replaceable LLM protocol, safe provider error contract, deterministic general mock, and no-extraction intake fixture.

@@ -6,10 +6,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.auth import CandidateAuthError, create_auth_router
 from app.api.routes import STTTranscriptionError, create_api_router
 from app.api.dev_profile import create_dev_profile_router
+from app.db.auth_repository import AuthRepository
 from app.db.config import DatabaseSettings
 from app.db.database import Database
+from app.services.candidate_auth import AuthSettings
+from app.services.rate_limit import SlidingWindowLimiter
 from app.services.candidate_intake import CandidateIntakePipeline
 from app.providers.gemini import GeminiLLMProvider
 from app.providers.gnani import GnaniSTTProvider, GnaniTTSProvider, SpeechProviderError
@@ -34,8 +38,10 @@ def create_app(
     pipeline: TextConversationPipeline | None = None,
     *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
     intake: CandidateIntakePipeline | None = None,
+    login_limiter: SlidingWindowLimiter | None = None,
 ) -> FastAPI:
     database_settings = DatabaseSettings.from_env(os.environ)
+    auth_settings = AuthSettings.from_env(os.environ, database_enabled=database_settings.enabled)
     speech_settings = SpeechSettings.from_env(os.environ) if stt is None or tts is None else None
     speech_pricing = SpeechPricing.from_env(os.environ)
     gemini_provider: GeminiLLMProvider | None = None
@@ -61,11 +67,13 @@ def create_app(
     async def lifespan(_app: FastAPI):
         database = None
         _app.state.database = None
+        _app.state.auth_repository = None
         try:
             if database_settings.enabled:
                 database = Database(database_settings)
                 await database.check_connection()
                 _app.state.database = database
+                _app.state.auth_repository = AuthRepository(database.sessions)
             yield
         finally:
             try:
@@ -73,6 +81,7 @@ def create_app(
                     await database.close()
             finally:
                 _app.state.database = None
+                _app.state.auth_repository = None
                 if gemini_provider is not None:
                     await gemini_provider.aclose()
 
@@ -83,6 +92,8 @@ def create_app(
         allow_methods=["POST", "GET"],
         allow_headers=["*"],
     )
+    app.state.auth_settings = auth_settings
+    app.state.auth_repository = None
     app.state.conversation_pipeline = conversation_pipeline
     app.state.candidate_intake_pipeline = intake_pipeline
     if os.getenv("BOLHIRE_DEV_PROFILE_INSPECTION") == "1":
@@ -123,6 +134,16 @@ def create_app(
         if "json_invalid" in error_types:
             return error_response(400, "MALFORMED_JSON", "Request body must be valid JSON.")
         return error_response(422, "INVALID_REQUEST", "Request data is invalid.")
+
+    @app.exception_handler(CandidateAuthError)
+    async def candidate_auth_error_handler(_request: Request, error: CandidateAuthError) -> JSONResponse:
+        response = error_response(error.status_code, error.code, str(error))
+        response.headers["Cache-Control"] = "no-store"
+        if error.retry_after is not None:
+            response.headers["Retry-After"] = str(error.retry_after)
+        if error.clear_cookie:
+            response.delete_cookie(**auth_settings.clear_cookie_args())
+        return response
 
     @app.exception_handler(SessionNotFoundError)
     async def session_not_found_handler(
@@ -174,6 +195,9 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(create_auth_router(
+        auth_settings, login_limiter or SlidingWindowLimiter(max_attempts=20, window_seconds=60),
+    ))
     app.include_router(create_api_router(
         conversation_pipeline, intake_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing
     ))
