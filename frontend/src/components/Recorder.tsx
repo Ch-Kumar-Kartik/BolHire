@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
+import type { SavedProfile } from '../lib/candidateApi'
+import { PROVIDER_NOTICE } from '../lib/candidateFlow'
 import { selectWorkflow, type ConversationSelection, type VoiceWorkflow } from '../lib/conversationSelection'
 import { decodeVoiceAudio, submitVoice, VoiceApiError, type VoiceLanguage, type VoiceReply } from '../lib/voiceApi'
+import CandidateSave from './CandidateSave'
 
 function formatDuration(durationSeconds: number): string {
   const wholeSeconds = Math.floor(durationSeconds)
@@ -14,13 +17,18 @@ function formatCost(cost: number | null): string {
   return cost === null ? 'Unavailable' : `₹${cost.toLocaleString('en-IN', { maximumFractionDigits: 8 })}`
 }
 
-function Recorder() {
+interface RecorderProps {
+  onProfileSaved: (profile: SavedProfile | null, created: boolean) => void
+}
+
+function Recorder({ onProfileSaved }: RecorderProps) {
   const [language, setLanguage] = useState<VoiceLanguage>('en-IN')
   const [conversation, setConversation] = useState<ConversationSelection>({ workflow: 'general', sessionId: null })
   const [reply, setReply] = useState<VoiceReply | null>(null)
   const [replyAudioUrl, setReplyAudioUrl] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [providerNoticeAccepted, setProviderNoticeAccepted] = useState(false)
   const replyAudioUrlRef = useRef<string | null>(null)
   const submittingRef = useRef(false)
   const {
@@ -35,6 +43,8 @@ function Recorder() {
   const isRecording = status === 'recording'
   const isRequesting = status === 'requesting'
   const isBusy = isRequesting || status === 'cancelling' || status === 'processing'
+  // Candidate Intake sends audio to speech and AI providers: nothing is recorded or submitted until the notice is acknowledged.
+  const intakeBlocked = conversation.workflow === 'candidate_intake' && !providerNoticeAccepted
 
   useEffect(() => () => {
     if (replyAudioUrlRef.current) URL.revokeObjectURL(replyAudioUrlRef.current)
@@ -52,6 +62,11 @@ function Recorder() {
     setReply(null)
     setConversation((current) => ({ ...current, sessionId: null }))
     setRequestError(null)
+  }
+
+  function handleSaved(profile: SavedProfile | null, created: boolean) {
+    setConversation((current) => ({ ...current, sessionId: null }))  // a successful save discards the temporary intake conversation on the server
+    onProfileSaved(profile, created)
   }
 
   function handleWorkflowChange(nextWorkflow: VoiceWorkflow) {
@@ -115,11 +130,21 @@ function Recorder() {
         </select>
       </label>
 
+      {conversation.workflow === 'candidate_intake' && (
+        <div className="provider-notice">
+          <p lang={language === 'hi-IN' ? 'hi' : 'en'}>{PROVIDER_NOTICE[language].text}</p>
+          <label className="check-row">
+            <input type="checkbox" checked={providerNoticeAccepted} onChange={(event) => setProviderNoticeAccepted(event.target.checked)} />
+            {PROVIDER_NOTICE[language].acknowledge}
+          </label>
+        </div>
+      )}
+
       <div className="recorder-controls">
         <button
           type="button"
           onClick={() => void startRecording(performance.now())}
-          disabled={isRecording || isBusy || submitting}
+          disabled={isRecording || isBusy || submitting || intakeBlocked}
         >
           {status === 'requesting' ? 'Requesting microphone...' : 'Start recording'}
         </button>
@@ -175,7 +200,7 @@ function Recorder() {
             Clear recording
           </button>
           <div className="submit-control">
-            <button type="button" onClick={() => void handleSubmit()} disabled={submitting || isBusy || isRecording}>
+            <button type="button" onClick={() => void handleSubmit()} disabled={submitting || isBusy || isRecording || intakeBlocked}>
               {submitting ? 'Submitting...' : 'Submit recording'}
             </button>
           </div>
@@ -211,6 +236,9 @@ function Recorder() {
             <p>{reply.estimated_speech_cost_inr ? 'Estimate from configured rates, not provider billing.' : 'Usage and cost estimates unavailable for this response.'}</p>
           </div>
         </div>
+      )}
+      {conversation.workflow === 'candidate_intake' && (
+        <CandidateSave sessionId={conversation.sessionId} language={language} onSaved={handleSaved} />
       )}
     </section>
   )

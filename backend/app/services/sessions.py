@@ -30,6 +30,8 @@ class ConversationSession:
     last_activity: float
     workflow: Workflow = "general"
     candidate_profile: CandidateProfile = field(default_factory=CandidateProfile)
+    # SHA-256 verifier of the recovery key issued for this intake session (never the key itself); hidden from repr.
+    recovery_key_hash: bytes | None = field(default=None, repr=False)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
@@ -87,6 +89,7 @@ class InMemorySessionStore:
 
     async def create(self, exchange: Sequence[ConversationMessage]) -> ConversationSession:
         async with self._sessions_lock:
+            self._sweep_expired_locked()
             session_id = self._new_session_id()
             session = ConversationSession(
                 session_id=session_id,
@@ -104,6 +107,7 @@ class InMemorySessionStore:
         validated_exchange = self._validated_exchange(exchange)
         profile = apply_candidate_update(CandidateProfile(), validated_update)
         async with self._sessions_lock:
+            self._sweep_expired_locked()
             session_id = self._new_session_id()
             session = ConversationSession(
                 session_id=session_id,
@@ -133,6 +137,55 @@ class InMemorySessionStore:
             session.candidate_profile = profile
             session.messages = messages
             session.last_activity = activity
+
+    async def issue_recovery_key(self, session: ConversationSession, key_hash: bytes) -> None:
+        """Bind a recovery-key verifier to this intake session. A later issue replaces it, so the earlier key stops working.
+        Callers hold session.lock so an issue cannot interleave with a save in progress."""
+        if not isinstance(key_hash, bytes) or len(key_hash) != 32:
+            raise ValueError("A 32-byte recovery key verifier is required.")
+        async with self._sessions_lock:
+            self._ensure_current(session)
+            self._raise_if_expired(session)
+            self._ensure_workflow(session, "candidate_intake")
+            session.recovery_key_hash = key_hash
+            session.last_activity = self._clock()
+
+    async def recovery_key_hash_for(self, session: ConversationSession) -> bytes | None:
+        async with self._sessions_lock:
+            self._ensure_current(session)
+            self._raise_if_expired(session)
+            self._ensure_workflow(session, "candidate_intake")
+            return session.recovery_key_hash
+
+    async def touch(self, session: ConversationSession, *, workflow: Workflow) -> None:
+        """Refresh the idle clock for a deliberate, non-conversational use of the session (preview)."""
+        async with self._sessions_lock:
+            self._ensure_current(session)
+            self._raise_if_expired(session)
+            self._ensure_workflow(session, workflow)
+            session.last_activity = self._clock()
+
+    async def discard(self, session: ConversationSession) -> None:
+        """Remove the session and drop what it held (conversation, profile, key verifier). Safe to call twice; an in-flight
+        turn that still holds the object finds it no longer current and cannot commit."""
+        async with self._sessions_lock:
+            if self._sessions.get(session.session_id) is session:
+                del self._sessions[session.session_id]
+            session.messages = []
+            session.candidate_profile = CandidateProfile()
+            session.recovery_key_hash = None
+
+    async def sweep_expired(self) -> int:
+        async with self._sessions_lock:
+            return self._sweep_expired_locked()
+
+    def _sweep_expired_locked(self) -> int:
+        """Drop idle sessions nobody came back to. Expiry otherwise only happens when a session is accessed, so an abandoned
+        session would keep its personal data in memory until the process restarts."""
+        stale = [key for key, session in self._sessions.items() if self._clock() - session.last_activity >= self._idle_seconds]
+        for key in stale:
+            del self._sessions[key]
+        return len(stale)
 
     @staticmethod
     def _validated_update(update: CandidateProfileUpdate) -> CandidateProfileUpdate:

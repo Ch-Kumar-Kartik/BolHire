@@ -1,0 +1,21 @@
+# Persistent LOCAL demo database for recording the candidate save flow. Unlike compose.test.yaml it keeps data in a named volume,
+# so profiles survive container restarts. Loopback only. Not a deployment and never for real candidate data.
+name: bolhire-db-demo
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: bolhire_demo
+      POSTGRES_USER: bolhire_demo
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:?Set a local demo password in .env.demo}
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - bolhire_demo_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolhire_demo -d bolhire_demo"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+volumes:
+  bolhire_demo_data:

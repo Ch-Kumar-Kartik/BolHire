@@ -1,8 +1,18 @@
 import { useState } from 'react'
+import CandidateAccount from './components/CandidateAccount'
 import Recorder from './components/Recorder'
+import type { SavedProfile } from './lib/candidateApi'
 
 function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [account, setAccount] = useState<SavedProfile | null>(null)
+  const [accountNotice, setAccountNotice] = useState<string | null>(null)
+
+  function handleProfileSaved(profile: SavedProfile | null, created: boolean) {
+    if (profile === null) return
+    setAccount(profile)
+    setAccountNotice(created ? 'Your profile was saved and you are signed in.' : 'This profile was already saved. You are signed in.')
+  }
 
   return (
     <main className="app-shell" data-theme={theme}>
@@ -23,7 +33,12 @@ function App() {
         <p className="description">
           A multilingual hiring experience for candidates and recruiters.
         </p>
-        <Recorder />
+        <Recorder onProfileSaved={handleProfileSaved} />
+        <CandidateAccount
+          account={account}
+          notice={accountNotice}
+          onAccountChange={(next, notice) => { setAccount(next); setAccountNotice(notice) }}
+        />
       </section>
     </main>
   )

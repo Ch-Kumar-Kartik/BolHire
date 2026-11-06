@@ -198,3 +198,19 @@ button:disabled {
   background: transparent;
   text-decoration: underline;
 }
+
+.provider-notice, .candidate-panel, .profile-card { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--panel-bg); }
+.provider-notice p, .candidate-panel p { margin: 0 0 0.75rem; line-height: 1.5; }
+.candidate-panel h3, .candidate-panel h4, .profile-card h3 { margin: 0 0 0.5rem; }
+.muted-note { color: var(--muted); font-size: 0.9375rem; }
+.success-note { color: var(--accent); font-weight: 600; }
+.check-row { display: flex; align-items: flex-start; gap: 0.625rem; margin: 0.75rem 0; line-height: 1.4; }
+.check-row input { margin-top: 0.3rem; }
+.profile-fields { display: grid; gap: 0.35rem; margin: 0 0 0.75rem; }
+.profile-fields div { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: 0.75rem; }
+.profile-fields dt { color: var(--muted); }
+.profile-fields dd { margin: 0; overflow-wrap: anywhere; }
+.recovery-key { display: block; margin: 0.5rem 0; padding: 0.75rem 1rem; border-radius: 0.625rem; background: var(--card-bg); border: 1px dashed var(--accent); font-size: 1.125rem; letter-spacing: 0.06em; overflow-wrap: anywhere; user-select: all; }
+.consent-text { margin: 1rem 0 0; padding: 0.75rem 1rem; border-left: 3px solid var(--accent); background: var(--card-bg); line-height: 1.5; }
+.key-input { flex: 1; min-width: 0; padding: 0.5rem; font: inherit; letter-spacing: 0.04em; }
+.candidate-account .language-control { align-items: stretch; flex-wrap: wrap; }

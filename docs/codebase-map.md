@@ -4,7 +4,9 @@
 
 - `frontend/src/main.tsx`: React application bootstrap.
 - `frontend/src/App.tsx`: BolHire application shell, dark/light theme toggle, and recorder entry point.
-- `frontend/src/components/Recorder.tsx`: workflow and language selection, recording controls, local WAV playback, explicit voice submission, provider-neutral assistant reply display, compact latency, usage, and cost diagnostics, returned audio playback and URL cleanup, conversation reset, and errors.
+- `frontend/vite.config.ts` (Task 9.3 `/api` proxy), `frontend/src/lib/apiBase.ts`, `candidateApi.ts`, `candidateFlow.ts` (+ tests): same-origin API base, candidate API client, and the pure save-flow state machine and messages.
+- `frontend/src/components/CandidateSave.tsx`, `CandidateAccount.tsx`, `SavedProfileCard.tsx` (Task 9.3): explicit save flow, sign-in/profile view, and profile display.
+- `frontend/src/components/Recorder.tsx` (also shows the provider-processing notice and the save panel in Candidate Intake): workflow and language selection, recording controls, local WAV playback, explicit voice submission, provider-neutral assistant reply display, compact latency, usage, and cost diagnostics, returned audio playback and URL cleanup, conversation reset, and errors.
 - `frontend/src/lib/conversationSelection.ts`: pure mode transition that drops the previous session ID.
 - `frontend/src/lib/conversationSelection.test.ts`: mode-switch session reset tests.
 - `frontend/src/lib/voiceApi.ts`: multipart voice request with workflow selection, backwards-compatible response validation, and returned WAV decoding for mock or Gnani audio.
@@ -24,7 +26,11 @@
 - `backend/app/db/database.py`: async engine/session factory, bounded connectivity check, disposal.
 - `backend/app/db/models.py`: candidate, profile, and auth-session table structure and constraints.
 - `backend/app/db/mapping.py`: strict profile conversion and immutable saved-profile results.
-- `backend/app/db/candidate_repository.py`: transaction-scoped create/read/replace/delete, expiry filtering, revision conflicts, safe storage errors.
+- `backend/app/db/candidate_repository.py`: transaction-scoped create/read/replace/delete, idempotent `register` and `active_identity_exists` (Task 9.3, database-clock retention, fail-closed collisions), expiry filtering, revision conflicts, safe storage errors.
+- `backend/app/services/candidate_consent.py` (Task 9.3): versioned en-IN/hi-IN consent notices, the 90-day retention constant, the saveable-content rule, and the profile digest.
+- `backend/app/api/candidate.py` (Task 9.3): preview, recovery-key, save, and authenticated profile-retrieval routes.
+- `backend/tests/test_candidate_consent.py`, `test_candidate_api.py`, `tests/integration/test_candidate_registration.py`, `test_candidate_flow.py` (Task 9.3): consent/digest, routes against fakes, `register` on PostgreSQL, and the real-database vertical slice.
+- `compose.demo.yaml` (Task 9.3): persistent loopback demo PostgreSQL (named volume); see `docs/database-development.md`.
 - `backend/app/db/auth_repository.py` (Task 9.2): login-session insert, expiry-checked session resolution, revocation, and batched expired-identity purge.
 - `backend/app/services/candidate_auth.py` (Task 9.2): recovery-key and session-token primitives, verifiers, Origin and cookie rules, `AuthSettings`.
 - `backend/app/services/rate_limit.py` (Task 9.2): process-local per-client sliding-window limiter and client-address selection (deployment-dependent; see `docs/database-development.md`).
@@ -54,7 +60,7 @@
 - `backend/app/services/pipeline.py`: general text conversation orchestration, stage timing, and access to its provider and session store for shared intake wiring.
 - `backend/app/services/candidate_profile.py`: strict, bounded candidate profile and partial-update validation with pure update application.
 - `backend/app/services/candidate_intake.py`: structured intake proposal validation, deterministic missing-field questions, complete spoken English/Hindi summaries, and lock-protected candidate-turn orchestration.
-- `backend/app/services/sessions.py`: bounded, lock-protected in-memory session store with lazy expiry, workflow identity, and atomic candidate profile plus exchange commits.
+- `backend/app/services/sessions.py` (Task 9.3 adds the bound recovery-key verifier, discard, touch, and expiry sweep): bounded, lock-protected in-memory session store with lazy expiry, workflow identity, and atomic candidate profile plus exchange commits.
 - `backend/app/services/wav.py`: strict bounded WAV validation.
 - `backend/tests/test_health.py`: health endpoint regression test.
 - `backend/tests/test_text_chat.py`: text API, session, provider, failure, and concurrency tests.

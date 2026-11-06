@@ -7,9 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.auth import CandidateAuthError, create_auth_router
+from app.api.candidate import create_candidate_router
 from app.api.routes import STTTranscriptionError, create_api_router
 from app.api.dev_profile import create_dev_profile_router
 from app.db.auth_repository import AuthRepository
+from app.db.candidate_repository import CandidateRepository
 from app.db.config import DatabaseSettings
 from app.db.database import Database
 from app.services.candidate_auth import AuthSettings
@@ -39,6 +41,7 @@ def create_app(
     *, stt: STTProvider | None = None, tts: TTSProvider | None = None,
     intake: CandidateIntakePipeline | None = None,
     login_limiter: SlidingWindowLimiter | None = None,
+    candidate_session_limiter: SlidingWindowLimiter | None = None, candidate_save_limiter: SlidingWindowLimiter | None = None,
 ) -> FastAPI:
     database_settings = DatabaseSettings.from_env(os.environ)
     auth_settings = AuthSettings.from_env(os.environ, database_enabled=database_settings.enabled)
@@ -68,12 +71,14 @@ def create_app(
         database = None
         _app.state.database = None
         _app.state.auth_repository = None
+        _app.state.candidate_repository = None
         try:
             if database_settings.enabled:
                 database = Database(database_settings)
                 await database.check_connection()
                 _app.state.database = database
                 _app.state.auth_repository = AuthRepository(database.sessions)
+                _app.state.candidate_repository = CandidateRepository(database.sessions)
             yield
         finally:
             try:
@@ -82,6 +87,7 @@ def create_app(
             finally:
                 _app.state.database = None
                 _app.state.auth_repository = None
+                _app.state.candidate_repository = None
                 if gemini_provider is not None:
                     await gemini_provider.aclose()
 
@@ -94,6 +100,7 @@ def create_app(
     )
     app.state.auth_settings = auth_settings
     app.state.auth_repository = None
+    app.state.candidate_repository = None
     app.state.conversation_pipeline = conversation_pipeline
     app.state.candidate_intake_pipeline = intake_pipeline
     if os.getenv("BOLHIRE_DEV_PROFILE_INSPECTION") == "1":
@@ -197,6 +204,11 @@ def create_app(
 
     app.include_router(create_auth_router(
         auth_settings, login_limiter or SlidingWindowLimiter(max_attempts=20, window_seconds=60),
+    ))
+    app.include_router(create_candidate_router(
+        auth_settings, intake_pipeline.sessions,
+        candidate_session_limiter or SlidingWindowLimiter(max_attempts=30, window_seconds=60),
+        candidate_save_limiter or SlidingWindowLimiter(max_attempts=10, window_seconds=60),
     ))
     app.include_router(create_api_router(
         conversation_pipeline, intake_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing

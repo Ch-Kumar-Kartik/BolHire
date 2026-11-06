@@ -1,3 +1,4 @@
+import { apiBaseUrl } from './apiBase.ts'
 import type { VoiceWorkflow } from './conversationSelection'
 
 export type VoiceLanguage = 'en-IN' | 'hi-IN'
@@ -22,8 +23,6 @@ export interface VoiceReply {
   }
   warning?: string | null
 }
-
-const apiBaseUrl = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
 
 export async function submitVoice(
   blob: Blob,

@@ -7,7 +7,7 @@ from pydantic_core import PydanticSerializationError
 from app.models import ConversationMessage
 from app.services.candidate_profile import CandidateProfile, CandidateProfileUpdate, apply_candidate_update
 from app.services.sessions import (
-    InMemorySessionStore, SessionExpiredError, SessionWorkflowMismatchError,
+    InMemorySessionStore, SessionExpiredError, SessionNotFoundError, SessionWorkflowMismatchError,
 )
 
 
@@ -239,5 +239,132 @@ def test_workflow_switch_is_rejected_without_changing_state():
         assert general.messages == exchange(1)
         assert intake.messages == exchange(1)
         assert (await store.candidate_profile_for(intake)).name == "Asha"
+
+    asyncio.run(scenario())
+
+
+# ---- Task 9.3: recovery-key binding, discard, and the expiry sweep ----------------------------------------------------------------------------------
+KEY_A, KEY_B = b"a" * 32, b"b" * 32
+
+
+def test_a_recovery_key_verifier_is_bound_to_one_intake_session_and_reissue_replaces_it():
+    async def scenario():
+        store = InMemorySessionStore()
+        first = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        second = await store.create_candidate_exchange(CandidateProfileUpdate(name="Ravi"), exchange(1))
+        assert await store.recovery_key_hash_for(first) is None
+        await store.issue_recovery_key(first, KEY_A)
+        assert await store.recovery_key_hash_for(first) == KEY_A and await store.recovery_key_hash_for(second) is None
+        await store.issue_recovery_key(first, KEY_B)  # reissue: the earlier key no longer matches anything
+        assert await store.recovery_key_hash_for(first) == KEY_B
+        for bad in (b"short", "a" * 32, None):
+            with pytest.raises(ValueError):
+                await store.issue_recovery_key(first, bad)
+        assert await store.recovery_key_hash_for(first) == KEY_B
+
+    asyncio.run(scenario())
+
+
+def test_keys_cannot_be_bound_to_general_chat_or_expired_or_discarded_sessions():
+    async def scenario():
+        clock = FakeClock()
+        store = InMemorySessionStore(clock=clock)
+        general = await store.create(exchange(1))
+        with pytest.raises(SessionWorkflowMismatchError):
+            await store.issue_recovery_key(general, KEY_A)
+        intake = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        clock.value = 1800
+        with pytest.raises(SessionExpiredError):
+            await store.issue_recovery_key(intake, KEY_A)
+        fresh = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        await store.discard(fresh)
+        with pytest.raises(SessionNotFoundError):
+            await store.issue_recovery_key(fresh, KEY_A)
+
+    asyncio.run(scenario())
+
+
+def test_the_key_verifier_is_never_in_the_session_repr():
+    async def scenario():
+        store = InMemorySessionStore()
+        session = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        await store.issue_recovery_key(session, KEY_A)
+        assert "recovery_key_hash" not in repr(session) and repr(KEY_A) not in repr(session)
+
+    asyncio.run(scenario())
+
+
+def test_discard_removes_the_session_clears_what_it_held_and_blocks_in_flight_commits():
+    async def scenario():
+        store = InMemorySessionStore()
+        session = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        await store.issue_recovery_key(session, KEY_A)
+        await store.discard(session)
+        await store.discard(session)  # idempotent
+        assert session.session_id not in store._sessions
+        assert session.messages == [] and session.candidate_profile == CandidateProfile() and session.recovery_key_hash is None
+        with pytest.raises(SessionNotFoundError):
+            await store.resolve(session.session_id, workflow="candidate_intake")
+        with pytest.raises(SessionNotFoundError):  # a turn that was already running cannot resurrect the profile
+            await store.commit_candidate_exchange(session, CandidateProfileUpdate(name="Late"), exchange(2))
+        assert (session.candidate_profile).name is None
+
+    asyncio.run(scenario())
+
+
+def test_discard_only_removes_the_session_it_was_given():
+    async def scenario():
+        store = InMemorySessionStore()
+        keep = await store.create_candidate_exchange(CandidateProfileUpdate(name="Keep"), exchange(1))
+        gone = await store.create_candidate_exchange(CandidateProfileUpdate(name="Gone"), exchange(1))
+        await store.discard(gone)
+        assert (await store.candidate_profile_for(keep)).name == "Keep"
+
+    asyncio.run(scenario())
+
+
+def test_abandoned_sessions_are_swept_without_being_accessed_and_active_ones_survive():
+    async def scenario():
+        clock = FakeClock()
+        store = InMemorySessionStore(clock=clock)
+        abandoned = await store.create_candidate_exchange(CandidateProfileUpdate(name="Abandoned"), exchange(1))
+        chat = await store.create(exchange(1))
+        clock.value = 1000
+        active = await store.create_candidate_exchange(CandidateProfileUpdate(name="Active"), exchange(1))
+        clock.value = 1800  # the first two are now idle for 30 minutes; the third for 13 minutes
+        assert await store.sweep_expired() == 2
+        assert set(store._sessions) == {active.session_id} and abandoned.session_id not in store._sessions and chat.session_id not in store._sessions
+        assert await store.sweep_expired() == 0
+
+    asyncio.run(scenario())
+
+
+def test_creating_a_session_opportunistically_sweeps_expired_ones():
+    async def scenario():
+        clock = FakeClock()
+        store = InMemorySessionStore(clock=clock)
+        old_intake = await store.create_candidate_exchange(CandidateProfileUpdate(name="Old"), exchange(1))
+        old_chat = await store.create(exchange(1))
+        clock.value = 1800
+        new_intake = await store.create_candidate_exchange(CandidateProfileUpdate(name="New"), exchange(1))
+        assert set(store._sessions) == {new_intake.session_id}
+        clock.value = 3600
+        new_chat = await store.create(exchange(1))
+        assert set(store._sessions) == {new_chat.session_id} and old_intake.session_id != old_chat.session_id
+
+    asyncio.run(scenario())
+
+
+def test_touch_refreshes_the_idle_clock_only_for_the_right_workflow():
+    async def scenario():
+        clock = FakeClock()
+        store = InMemorySessionStore(clock=clock)
+        intake = await store.create_candidate_exchange(CandidateProfileUpdate(name="Asha"), exchange(1))
+        clock.value = 1000
+        await store.touch(intake, workflow="candidate_intake")
+        clock.value = 2500  # 1500 s since the touch, 2500 s since creation
+        assert (await store.candidate_profile_for(intake)).name == "Asha"
+        with pytest.raises(SessionWorkflowMismatchError):
+            await store.touch(intake, workflow="general")
 
     asyncio.run(scenario())

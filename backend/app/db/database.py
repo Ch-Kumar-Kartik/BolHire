@@ -19,6 +19,8 @@ class Database:
             settings.url, echo=False, hide_parameters=True,
             pool_size=5, max_overflow=0, pool_timeout=5, pool_pre_ping=True,
             connect_args={"connect_timeout": 5},
+            # The locking and uniqueness reasoning in the repositories assumes READ COMMITTED; do not rely on the server default.
+            isolation_level="READ COMMITTED",
         )
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
 
