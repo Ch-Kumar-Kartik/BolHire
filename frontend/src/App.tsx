@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import CandidateAccount from './components/CandidateAccount'
+import JobMatches from './components/JobMatches'
 import Recorder from './components/Recorder'
 import type { SavedProfile } from './lib/candidateApi'
 
@@ -38,6 +39,11 @@ function App() {
           account={account}
           notice={accountNotice}
           onAccountChange={(next, notice) => { setAccount(next); setAccountNotice(notice) }}
+        />
+        <JobMatches
+          key={account ? `${account.consented_at}|${account.expires_at}` : 'signed-out'}
+          signedIn={account !== null}
+          onUnauthorized={() => { setAccount(null); setAccountNotice('Your session ended. Sign in again with your recovery key.') }}
         />
       </section>
     </main>

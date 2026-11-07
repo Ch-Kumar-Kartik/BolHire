@@ -214,3 +214,35 @@ button:disabled {
 .consent-text { margin: 1rem 0 0; padding: 0.75rem 1rem; border-left: 3px solid var(--accent); background: var(--card-bg); line-height: 1.5; }
 .key-input { flex: 1; min-width: 0; padding: 0.5rem; font: inherit; letter-spacing: 0.04em; }
 .candidate-account .language-control { align-items: stretch; flex-wrap: wrap; }
+
+/* ---- job matches (sample listings) ---- */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sample-banner { margin: 0.75rem 0 0; padding: 0.75rem 1rem; border: 1px solid var(--accent); border-radius: 0.75rem; background: var(--panel-bg); line-height: 1.5; font-weight: 600; }
+.job-list { display: grid; gap: 1rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.job-card { padding: 1rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--panel-bg); min-width: 0; }
+.job-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.5rem 1rem; }
+.job-card h3 { margin: 0; font-size: 1.125rem; overflow-wrap: anywhere; }
+.job-company { margin: 0.125rem 0 0; color: var(--muted); }
+.score-badge { padding: 0.25rem 0.625rem; border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; border: 1px solid transparent; }
+.score-high { color: #052e16; background: #86efac; }
+.score-medium { color: #422006; background: #fde68a; }
+.score-low { color: var(--secondary-text); background: var(--secondary-bg); border-color: var(--border); }
+.job-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; margin: 0.75rem 0 0; color: var(--muted); font-size: 0.9375rem; }
+.sample-tag { padding: 0 0.5rem; border: 1px dashed var(--accent); border-radius: 0.375rem; color: var(--accent); font-weight: 700; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0.75rem 0 0; padding: 0; list-style: none; }
+.chip { padding: 0.125rem 0.625rem; border: 1px solid var(--border); border-radius: 999px; background: var(--card-bg); font-size: 0.875rem; }
+.chip-matched { border-color: var(--accent); font-weight: 700; }
+.chip-matched::before { content: '✓ '; }
+.chip-missing { opacity: 0.6; border-style: dashed; }
+.job-details { margin-top: 0.75rem; }
+.job-details summary { cursor: pointer; font-weight: 600; }
+.criteria-list { display: grid; gap: 0.25rem; margin: 0.5rem 0 0; padding: 0; list-style: none; }
+.criteria-list li { display: grid; grid-template-columns: minmax(6rem, 9rem) 1fr; gap: 0.5rem; }
+.criteria-list li span:first-child { color: var(--muted); }
+.job-description { margin: 0.5rem 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 30rem) {
+  .app-shell { padding: 0.75rem; }
+  .hero { padding: 1.25rem; }
+  .criteria-list li { grid-template-columns: 1fr; gap: 0; }
+  .profile-fields div { grid-template-columns: 1fr; gap: 0; }
+}

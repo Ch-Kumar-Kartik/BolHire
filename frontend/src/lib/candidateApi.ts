@@ -67,7 +67,7 @@ function isSavedProfile(value: unknown): value is SavedProfile {
 
 // Requests are same-origin (default fetch credentials): the session cookie is sent without any cross-origin cookie handling. The
 // recovery key is only ever placed in a JSON body, and no error message below includes request data.
-async function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+export async function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
