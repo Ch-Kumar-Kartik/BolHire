@@ -20,7 +20,7 @@ def test_migrations_repeat_downgrade_upgrade_and_metadata_agree(db_url):
         with engine.begin() as connection:
             migration(connection, "head")
             assert set(inspect(connection).get_table_names()) == {
-                "alembic_version", "candidates", "candidate_profiles", "candidate_auth_sessions",
+                "alembic_version", "candidates", "candidate_profiles", "candidate_auth_sessions", "jobs", "job_interests",
             }
             context = MigrationContext.configure(connection, opts={"compare_type": True, "compare_server_default": True})
             assert compare_metadata(context, Base.metadata) == []
