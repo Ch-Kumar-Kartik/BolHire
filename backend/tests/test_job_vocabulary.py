@@ -1,4 +1,6 @@
+import ast
 import unicodedata
+from pathlib import Path
 
 import pytest
 
@@ -62,3 +64,20 @@ def test_unknown_or_alias_text_never_resolves_here(text):
 
 def test_the_vocabulary_module_defines_no_alias_table():
     assert not [name for name in dir(vocab) if "alias" in name.casefold() or "synonym" in name.casefold()]
+
+
+def test_the_level_vocabulary_is_exactly_the_specified_keys():
+    assert vocab.LEVEL_KEYS == frozenset({"fresher", "junior", "mid", "senior"})
+    assert isinstance(vocab.LEVEL_KEYS, frozenset)
+
+
+@pytest.mark.parametrize("key", sorted(vocab.LEVEL_KEYS))
+def test_level_keys_are_lowercase_ascii_kebab_case(key):
+    assert vocab.KEY_PATTERN.fullmatch(key) and key == key.casefold() and key.isascii()
+
+
+def test_the_level_vocabulary_literal_has_no_duplicates():
+    tree = ast.parse(Path(vocab.__file__).read_text(encoding="utf-8"))
+    (assignment,) = [node for node in tree.body if isinstance(node, ast.Assign) and node.targets[0].id == "LEVEL_KEYS"]
+    (literal,) = assignment.value.args
+    assert len(literal.elts) == len({element.value for element in literal.elts}) == len(vocab.LEVEL_KEYS)

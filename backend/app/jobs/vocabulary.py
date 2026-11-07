@@ -51,3 +51,6 @@ def canonical_skill(text: str) -> str | None:
     """The skill key whose normalized spelling equals `text` exactly, else None (unknown text never matches anything)."""
     normalized = normalize_skill_text(text)
     return normalized if normalized in SKILL_KEYS else None
+
+
+LEVEL_KEYS = frozenset({"fresher", "junior", "mid", "senior"})
