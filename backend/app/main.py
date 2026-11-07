@@ -10,6 +10,7 @@ from app.api.auth import CandidateAuthError, create_auth_router
 from app.api.candidate import create_candidate_router
 from app.api.routes import STTTranscriptionError, create_api_router
 from app.api.dev_profile import create_dev_profile_router
+from app.api.job_recommendations import create_job_recommendations_router
 from app.db.auth_repository import AuthRepository
 from app.db.candidate_repository import CandidateRepository
 from app.db.config import DatabaseSettings
@@ -42,6 +43,7 @@ def create_app(
     intake: CandidateIntakePipeline | None = None,
     login_limiter: SlidingWindowLimiter | None = None,
     candidate_session_limiter: SlidingWindowLimiter | None = None, candidate_save_limiter: SlidingWindowLimiter | None = None,
+    job_recommendations_limiter: SlidingWindowLimiter | None = None,
 ) -> FastAPI:
     database_settings = DatabaseSettings.from_env(os.environ)
     auth_settings = AuthSettings.from_env(os.environ, database_enabled=database_settings.enabled)
@@ -209,6 +211,9 @@ def create_app(
         auth_settings, intake_pipeline.sessions,
         candidate_session_limiter or SlidingWindowLimiter(max_attempts=30, window_seconds=60),
         candidate_save_limiter or SlidingWindowLimiter(max_attempts=10, window_seconds=60),
+    ))
+    app.include_router(create_job_recommendations_router(
+        auth_settings, job_recommendations_limiter or SlidingWindowLimiter(max_attempts=30, window_seconds=60),
     ))
     app.include_router(create_api_router(
         conversation_pipeline, intake_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing
