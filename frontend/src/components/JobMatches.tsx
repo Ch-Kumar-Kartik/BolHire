@@ -1,12 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { fetchRecommendations, isJobsUnavailableError, isUnauthorizedError, type JobMatch, type Recommendations } from '../lib/jobsApi'
 import {
-  coverageText, criterionLabel, describeCriterion, emptyStateText, employmentTypeLabel, formatExperienceRange, scoreTone, workModeLabel,
+  SAMPLE_BANNER, avatarHue, companyInitial, coverageText, criterionLabel, describeCriterion, emptyStateText, employmentTypeLabel, fitLabel,
+  formatExperienceRange, headerText, scoreTone, whySuggestedText, workModeLabel,
 } from '../lib/jobMatchView'
+import { ChevronIcon, InboxIcon } from './icons'
 
 interface Props {
   signedIn: boolean
   onUnauthorized: () => void
+  /** Additive, optional: the number of loaded matches, or null when none are loaded. Used only for the navigation badge. */
+  onResultCount?: (count: number | null) => void
+  /** Additive, optional: the saved profile's name, used only in the list caption. */
+  candidateName?: string | null
 }
 
 type View =
@@ -14,8 +20,6 @@ type View =
   | { phase: 'loading' }
   | { phase: 'error'; kind: 'jobs_unavailable' | 'generic' }
   | { phase: 'done'; data: Recommendations }
-
-const BANNER = 'Sample listings only. These jobs are fictional examples for demonstration. Matching is rule-based, not AI-generated, and nothing here is sent to any employer.'
 
 function SkillChips({ match }: { match: JobMatch }) {
   const skills = match.criteria.find((criterion) => criterion.name === 'skills')
@@ -37,27 +41,37 @@ function SkillChips({ match }: { match: JobMatch }) {
   )
 }
 
-function MatchCard({ match }: { match: JobMatch }) {
+function MatchRow({ match, open, onToggle }: { match: JobMatch; open: boolean; onToggle: () => void }) {
   const { job } = match
+  const panelId = `match-panel-${job.id}`
+  const tone = scoreTone(match.score_percent)
   return (
-    <li className="job-card">
-      <div className="job-card-head">
-        <div>
-          <h3>{job.title}</h3>
-          <p className="job-company">{job.company}</p>
-        </div>
-        <span className={`score-badge score-${scoreTone(match.score_percent)}`}>Match {match.score_percent}%</span>
-      </div>
-      <p className="job-meta">
-        <span className="sample-tag">Sample listing</span>
-        <span>{job.location_label}</span>
-        <span>{workModeLabel(job.work_mode)}</span>
-        <span>{employmentTypeLabel(job.employment_type)}</span>
-        <span>{formatExperienceRange(job.min_experience_years, job.max_experience_years)}</span>
-      </p>
-      <SkillChips match={match} />
-      <details className="job-details">
-        <summary>Why this match</summary>
+    <li className={`job-row${open ? ' is-open' : ''}`}>
+      <button type="button" className="job-row-button" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
+        <span className="avatar" style={{ '--avatar-hue': avatarHue(job.company) } as CSSProperties} aria-hidden="true">
+          {companyInitial(job.company)}
+        </span>
+        <span className="job-row-main">
+          <span className="job-row-title">
+            <strong>{job.title}</strong>
+            <span className="sample-tag">Sample</span>
+          </span>
+          <span className="job-row-meta">{job.company} · {job.location_label} · {workModeLabel(job.work_mode)}</span>
+        </span>
+        <span className="job-row-side">
+          <span className={`fit-chip fit-${tone}`}>{fitLabel(match.score_percent)}</span>
+          <span className="job-row-score">{match.score_percent}%</span>
+        </span>
+        <span className="job-row-chevron"><ChevronIcon /></span>
+      </button>
+      <div id={panelId} className="job-row-panel" hidden={!open}>
+        <dl className="job-facts">
+          <div><dt>Employment</dt><dd>{employmentTypeLabel(job.employment_type)}</dd></div>
+          <div><dt>Experience</dt><dd>{formatExperienceRange(job.min_experience_years, job.max_experience_years)}</dd></div>
+          <div><dt>Match</dt><dd>{match.score_percent}%</dd></div>
+        </dl>
+        <SkillChips match={match} />
+        <h4 className="panel-heading">Why this match</h4>
         <ul className="criteria-list">
           {match.criteria.map((criterion) => (
             <li key={criterion.name}>
@@ -66,17 +80,16 @@ function MatchCard({ match }: { match: JobMatch }) {
             </li>
           ))}
         </ul>
-      </details>
-      <details className="job-details">
-        <summary>About this job</summary>
+        <h4 className="panel-heading">About this job</h4>
         <p className="job-description">{job.description}</p>
-      </details>
+      </div>
     </li>
   )
 }
 
-function JobMatches({ signedIn, onUnauthorized }: Props) {
+function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: Props) {
   const [view, setView] = useState<View>({ phase: 'idle' })
+  const [openId, setOpenId] = useState<string | null>(null)
   const latestRequest = useRef(0)
 
   // Signing out (or unmounting) invalidates any request in flight and forgets everything shown.
@@ -87,6 +100,10 @@ function JobMatches({ signedIn, onUnauthorized }: Props) {
     }
   }, [signedIn])
   useEffect(() => () => { latestRequest.current += 1 }, [])
+  useEffect(() => {
+    onResultCount?.(view.phase === 'done' ? view.data.matches.length : null)
+    setOpenId(null)
+  }, [view, onResultCount])
 
   async function load() {
     if (!signedIn || view.phase === 'loading') return
@@ -108,16 +125,37 @@ function JobMatches({ signedIn, onUnauthorized }: Props) {
 
   if (!signedIn) return null
   const loading = view.phase === 'loading'
+  const label = loading ? 'Finding matches…' : view.phase === 'error' ? 'Try again' : view.phase === 'done' ? 'Refresh matches' : 'Show my matches'
+  const actionButton = (
+    <button type="button" className={view.phase === 'idle' ? undefined : 'secondary-button'} onClick={() => void load()} disabled={loading}>
+      {label}
+    </button>
+  )
 
   return (
-    <section className="recorder job-matches" aria-labelledby="job-matches-title">
-      <h2 id="job-matches-title">Sample job matches</h2>
-      <p className="sample-banner" role="note">{BANNER}</p>
+    <div className="job-matches">
+      <div className="inbox-header">
+        <div>
+          <h2 id="job-matches-title">Jobs inbox</h2>
+          <p className="inbox-subtitle">Sample listings matched to your saved profile</p>
+        </div>
+        {view.phase !== 'idle' && actionButton}
+      </div>
+      <p className="sample-banner" role="note">{SAMPLE_BANNER}</p>
 
       {view.phase === 'idle' && (
-        <p className="recorder-description">
-          See which sample jobs fit your saved profile. Matching runs only when you ask, and uses your skills, target role, experience, location and work mode.
-        </p>
+        <div className="empty-state">
+          <span className="empty-icon"><InboxIcon size={28} /></span>
+          <p>
+            See which sample jobs fit your saved profile. Matching runs only when you ask, and uses your skills, target role, experience, location and work mode.
+          </p>
+          {actionButton}
+        </div>
+      )}
+      {loading && (
+        <ul className="job-list is-loading" aria-hidden="true">
+          {[0, 1, 2].map((row) => <li key={row} className="skeleton-row"><span /><span /></li>)}
+        </ul>
       )}
       {view.phase === 'error' && (
         <p className="recording-error" role="alert">
@@ -127,30 +165,34 @@ function JobMatches({ signedIn, onUnauthorized }: Props) {
       {view.phase === 'done' && (
         <div aria-live="polite">
           {view.data.matches.length === 0 ? (
-            <p className="muted-note">{emptyStateText(view.data.status)}</p>
+            <div className="empty-state">
+              <span className="empty-icon"><InboxIcon size={28} /></span>
+              <p>{emptyStateText(view.data.status)}</p>
+              {view.data.status === 'ok' && <p className="muted-note">{coverageText(view.data.coverage_percent)}</p>}
+            </div>
           ) : (
             <>
-              <p className="muted-note">{coverageText(view.data.coverage_percent)}</p>
+              <p className="list-caption">{headerText(candidateName, view.data.matches.length)}</p>
               <ul className="job-list">
-                {view.data.matches.map((match) => <MatchCard key={match.job.id} match={match} />)}
+                {view.data.matches.map((match) => (
+                  <MatchRow
+                    key={match.job.id}
+                    match={match}
+                    open={openId === match.job.id}
+                    onToggle={() => setOpenId((current) => (current === match.job.id ? null : match.job.id))}
+                  />
+                ))}
               </ul>
+              <aside className="why-box" aria-labelledby="why-these-jobs">
+                <h3 id="why-these-jobs">Why these jobs</h3>
+                <p>{whySuggestedText(view.data.matches)}</p>
+                <p className="muted-note">{coverageText(view.data.coverage_percent)}</p>
+              </aside>
             </>
           )}
-          {view.data.status === 'ok' && view.data.matches.length === 0 && <p className="muted-note">{coverageText(view.data.coverage_percent)}</p>}
         </div>
       )}
-
-      <div className="submit-control">
-        <button
-          type="button"
-          className={view.phase === 'done' || view.phase === 'error' ? 'secondary-button' : undefined}
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          {loading ? 'Finding matches…' : view.phase === 'error' ? 'Try again' : view.phase === 'done' ? 'Refresh matches' : 'Show my matches'}
-        </button>
-      </div>
-    </section>
+    </div>
   )
 }
 

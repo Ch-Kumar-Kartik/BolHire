@@ -1,8 +1,10 @@
 // Pure presentation helpers for job matches. No React, no network. Unknown values fall back to a safe label and never throw.
 
-import type { CriterionResult, RecommendationStatus } from './jobsApi.ts'
+import type { CriterionResult, JobMatch, RecommendationStatus } from './jobsApi.ts'
 
 export type ScoreTone = 'high' | 'medium' | 'low'
+
+export const SAMPLE_BANNER = 'Sample listings only. These jobs are fictional examples for demonstration. Matching is rule-based, not AI-generated, and nothing here is sent to any employer.'
 
 const WORK_MODES: Record<string, string> = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' }
 const EMPLOYMENT_TYPES: Record<string, string> = {
@@ -77,4 +79,54 @@ export function emptyStateText(status: RecommendationStatus | string): string {
 export function scoreTone(percent: number): ScoreTone {
   if (!Number.isFinite(percent)) return 'low'
   return percent >= 70 ? 'high' : percent >= 40 ? 'medium' : 'low'
+}
+
+export function fitLabel(percent: number): string {
+  const tone = scoreTone(percent)
+  return tone === 'high' ? 'Great fit' : tone === 'medium' ? 'Good fit' : 'Possible fit'
+}
+
+export function companyInitial(company: unknown): string {
+  if (typeof company !== 'string') return '?'
+  const first = Array.from(company.trim())[0]
+  return first === undefined ? '?' : first.toLocaleUpperCase('en-IN')
+}
+
+/** Deterministic 0–359 hue for a company name (FNV-1a over code points, case- and space-insensitive). */
+export function avatarHue(company: unknown): number {
+  if (typeof company !== 'string') return 0
+  let hash = 0x811c9dc5
+  for (const char of company.trim().toLocaleLowerCase('en-IN')) {
+    hash ^= char.codePointAt(0) ?? 0
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash % 360
+}
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join('')
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/** A fixed template over the top match's own criteria. No model, no invented facts; not-evaluated criteria are never mentioned. */
+export function whySuggestedText(matches: readonly JobMatch[]): string {
+  const top = matches[0]
+  if (top === undefined) return ''
+  const criteria = top.criteria.filter((criterion) => criterion.state !== 'not_evaluated')
+  const name = (criterion: CriterionResult) => criterionLabel(criterion.name).toLocaleLowerCase('en-IN')
+  const matched = criteria.filter((criterion) => criterion.state === 'matched').map(name)
+  const weaker = criteria.filter((criterion) => criterion.state === 'partial' || criterion.state === 'unmatched').map(name)
+  const parts = [`Closest fit: ${top.job.title} at ${top.job.company}.`]
+  parts.push(matched.length > 0 ? `It matches your ${joinNames(matched)}.` : 'It is the closest partial match we found.')
+  if (weaker.length > 0) parts.push(`Weaker on ${joinNames(weaker)}.`)
+  const skills = criteria.find((criterion) => criterion.name === 'skills')
+  if (skills !== undefined && skills.missing_skills.length > 0) parts.push(`Skills to build: ${joinNames(skills.missing_skills.slice(0, 3))}.`)
+  return parts.join(' ')
+}
+
+export function headerText(name: string | null | undefined, count: number): string {
+  const safe = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+  const noun = safe === 1 ? 'here is 1 sample job' : `here are ${safe} sample jobs`
+  const trimmed = typeof name === 'string' ? name.trim() : ''
+  return trimmed ? `${trimmed}, ${noun}` : `${noun.charAt(0).toUpperCase()}${noun.slice(1)}`
 }
