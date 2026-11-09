@@ -25,3 +25,6 @@ backend/smoke-output.wav
 
 # Local, never-committed data (scraped or exported job listings)
 local_data/
+
+# Local assistant instructions
+CLAUDE.md
