@@ -11,10 +11,13 @@ from app.api.candidate import create_candidate_router
 from app.api.routes import STTTranscriptionError, create_api_router
 from app.api.dev_profile import create_dev_profile_router
 from app.api.job_recommendations import create_job_recommendations_router
+from app.api.live_fetch import LiveFetchService, create_live_fetch_router
 from app.db.auth_repository import AuthRepository
 from app.db.candidate_repository import CandidateRepository
 from app.db.config import DatabaseSettings
 from app.db.database import Database
+from app.jobs.live_fetch import ApifyClient
+from app.jobs.live_fetch_config import ApifySettings
 from app.services.candidate_auth import AuthSettings
 from app.services.rate_limit import SlidingWindowLimiter
 from app.services.candidate_intake import CandidateIntakePipeline
@@ -44,6 +47,7 @@ def create_app(
     login_limiter: SlidingWindowLimiter | None = None,
     candidate_session_limiter: SlidingWindowLimiter | None = None, candidate_save_limiter: SlidingWindowLimiter | None = None,
     job_recommendations_limiter: SlidingWindowLimiter | None = None,
+    live_fetch_service: LiveFetchService | None = None,
 ) -> FastAPI:
     database_settings = DatabaseSettings.from_env(os.environ)
     auth_settings = AuthSettings.from_env(os.environ, database_enabled=database_settings.enabled)
@@ -214,6 +218,10 @@ def create_app(
     ))
     app.include_router(create_job_recommendations_router(
         auth_settings, job_recommendations_limiter or SlidingWindowLimiter(max_attempts=30, window_seconds=60),
+    ))
+    # Live listings through Apify (local demo). Off unless APIFY_TOKEN is set in the server environment.
+    app.include_router(create_live_fetch_router(
+        live_fetch_service or LiveFetchService(ApifyClient(ApifySettings.from_env(os.environ))),
     ))
     app.include_router(create_api_router(
         conversation_pipeline, intake_pipeline, stt, tts, estimated_credits, speech_provider, speech_pricing

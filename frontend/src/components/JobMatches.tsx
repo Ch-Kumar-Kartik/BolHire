@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { fetchRecommendations, isJobsUnavailableError, isUnauthorizedError, type JobMatch, type Recommendations } from '../lib/jobsApi'
+import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { fetchLiveJobs, fetchRecommendations, isJobsUnavailableError, isUnauthorizedError, type JobMatch, type Recommendations } from '../lib/jobsApi'
 import {
   POSTING_LINK_TEXT, avatarHue, bannerText, companyInitial, coverageText, criterionLabel, describeCriterion, emptyStateText,
   employmentTypeLabel, fitLabel, formatExperienceRange, formatRetrievedDate, headerText, jobMetaLine, listingMix, postingUrl, scoreTone, sourceLabel, visibleCriteria,
   sourceTag, subtitleText, whySuggestedText,
 } from '../lib/jobMatchView'
+import { LIVE_BUTTON_TEXT, initialLive, liveReducer, liveStatusText } from '../lib/liveFetchView'
 import { ChevronIcon, InboxIcon } from './icons'
 
 interface Props {
@@ -109,15 +110,19 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
   const [view, setView] = useState<View>({ phase: 'idle' })
   const [openId, setOpenId] = useState<string | null>(null)
   const latestRequest = useRef(0)
+  const [live, dispatchLive] = useReducer(liveReducer, initialLive)
+  const latestLive = useRef(0)
 
   // Signing out (or unmounting) invalidates any request in flight and forgets everything shown.
   useEffect(() => {
     if (!signedIn) {
       latestRequest.current += 1
+      latestLive.current += 1
       setView({ phase: 'idle' })
+      dispatchLive({ type: 'reset' })
     }
   }, [signedIn])
-  useEffect(() => () => { latestRequest.current += 1 }, [])
+  useEffect(() => () => { latestRequest.current += 1; latestLive.current += 1 }, [])
   useEffect(() => {
     onResultCount?.(view.phase === 'done' ? view.data.matches.length : null)
     setOpenId(null)
@@ -141,8 +146,30 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
     }
   }
 
+  // Explicit click only: a live search is never started on mount, sign-in or reload.
+  async function findLive() {
+    if (!signedIn || live.phase === 'running') return
+    const id = ++latestLive.current
+    dispatchLive({ type: 'start' })
+    try {
+      const result = await fetchLiveJobs()
+      if (id !== latestLive.current) return
+      dispatchLive({ type: 'succeeded', result })
+      void load()  // show the refreshed matches
+    } catch (caught) {
+      if (id !== latestLive.current) return  // signed out, unmounted, or superseded: ignore the late answer
+      if (isUnauthorizedError(caught)) {
+        dispatchLive({ type: 'reset' })
+        onUnauthorized()
+        return
+      }
+      dispatchLive({ type: 'failed', error: caught })
+    }
+  }
+
   if (!signedIn) return null
   const loading = view.phase === 'loading'
+  const liveStatus = liveStatusText(live)
   const mix = view.phase === 'done' ? listingMix(view.data.matches) : 'none'
   const label = loading ? 'Finding matches…' : view.phase === 'error' ? 'Try again' : view.phase === 'done' ? 'Refresh matches' : 'Show my matches'
   const actionButton = (
@@ -158,9 +185,15 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
           <h2 id="job-matches-title">Jobs inbox</h2>
           <p className="inbox-subtitle">{subtitleText(mix)}</p>
         </div>
-        {view.phase !== 'idle' && actionButton}
+        <div className="inbox-actions">
+          <button type="button" className="secondary-button" onClick={() => void findLive()} disabled={live.phase === 'running'}>
+            {LIVE_BUTTON_TEXT}
+          </button>
+          {view.phase !== 'idle' && actionButton}
+        </div>
       </div>
       <p className="sample-banner" role="note">{bannerText(mix)}</p>
+      <p className={`live-status${live.phase === 'error' ? ' is-error' : ''}`} role="status" aria-live="polite">{liveStatus ?? ''}</p>
 
       {view.phase === 'idle' && (
         <div className="empty-state">

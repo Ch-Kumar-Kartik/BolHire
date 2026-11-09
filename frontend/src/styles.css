@@ -385,3 +385,8 @@ input, select, textarea {
 .source-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 .source-link { color: var(--link); font-weight: 600; text-decoration: underline; text-underline-offset: 0.15em; overflow-wrap: anywhere; }
 .source-link:hover { text-decoration-thickness: 2px; }
+
+/* Live search (Task 12): the action row and its status line. The status line keeps its space so the layout never jumps. */
+.inbox-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.live-status { min-height: 1.25rem; margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.4; }
+.live-status.is-error { color: var(--error-text); font-weight: 600; }

@@ -492,7 +492,10 @@ def test_every_state_changing_candidate_route_requires_the_trusted_origin(make):
     app, _, candidates = make()
     schema = app.openapi()
     writes = [(m, p) for p, item in schema["paths"].items() if p.startswith("/api/v1/candidate") for m in item if m in {"post", "put", "patch", "delete"}]
-    assert {p for _, p in writes} == {"/api/v1/candidate/intake/preview", "/api/v1/candidate/recovery-key", "/api/v1/candidate/profile"}
+    assert {p for _, p in writes} == {
+        "/api/v1/candidate/intake/preview", "/api/v1/candidate/recovery-key", "/api/v1/candidate/profile",
+        "/api/v1/candidate/jobs/fetch-live",  # Task 12
+    }
 
     async def scenario():
         async with client_for(app) as client:

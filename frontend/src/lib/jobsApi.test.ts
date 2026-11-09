@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 
 import { CandidateApiError } from './candidateApi.ts'
-import { fetchRecommendations, isJobsUnavailableError, isUnauthorizedError } from './jobsApi.ts'
+import { fetchLiveJobs, fetchRecommendations, isJobsUnavailableError, isUnauthorizedError } from './jobsApi.ts'
 
 const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
@@ -186,4 +186,60 @@ for (const [name, changes] of malformedProvenance) {
 test('a real listing with no posting link is still valid (the link is simply not shown)', async () => {
   capture(json(withJob({ ...realJob, source_url: null })))
   assert.equal((await fetchRecommendations()).matches[0].job.source_url, null)
+})
+
+// ---- live fetch (Task 12) ----------------------------------------------------------------------------------------------------------
+const LIVE_URL = 'http://localhost:8000/api/v1/candidate/jobs/fetch-live'
+const liveOk = { status: 'ok', fetched: 25, imported_new: 20, already_present: 3, dropped: 2 }
+
+test('a live fetch is a POST to the exact URL with no body and no extra headers', async () => {
+  const calls = capture(json(liveOk))
+  assert.deepEqual(await fetchLiveJobs(), liveOk)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, LIVE_URL)
+  assert.equal(calls[0].init?.method, 'POST')
+  assert.equal(calls[0].init?.body, undefined)
+  assert.equal(calls[0].init?.headers, undefined)
+  assert.equal(calls[0].init?.credentials, undefined)
+})
+
+test('a nothing-found live result is valid', async () => {
+  capture(json({ status: 'nothing_found', fetched: 0, imported_new: 0, already_present: 0, dropped: 0 }))
+  assert.equal((await fetchLiveJobs()).status, 'nothing_found')
+})
+
+const badLive: [string, unknown][] = [
+  ['unknown status', { ...liveOk, status: 'done' }],
+  ['missing count', { status: 'ok', fetched: 1, imported_new: 1, already_present: 0 }],
+  ['negative count', { ...liveOk, dropped: -1 }],
+  ['fractional count', { ...liveOk, fetched: 1.5 }],
+  ['string count', { ...liveOk, imported_new: '3' }],
+  ['array body', []],
+  ['null body', null],
+]
+
+for (const [name, body] of badLive) {
+  test(`a malformed live result is rejected: ${name}`, async () => {
+    capture(json(body))
+    await assert.rejects(fetchLiveJobs(), (error: unknown) => error instanceof CandidateApiError && error.code === 'INVALID_RESPONSE')
+  })
+}
+
+test('a 401 on a live fetch surfaces as unauthorized', async () => {
+  capture(json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in to continue.' } }, 401))
+  await assert.rejects(fetchLiveJobs(), (error: unknown) => isUnauthorizedError(error))
+})
+
+test('live-fetch failure codes come through as API errors and are not mistaken for other failures', async () => {
+  for (const [status, code] of [[503, 'LIVE_FETCH_NOT_CONFIGURED'], [503, 'LIVE_FETCH_UNAVAILABLE'], [409, 'PROFILE_INCOMPLETE'],
+    [429, 'LIVE_FETCH_RATE_LIMITED'], [429, 'LIVE_FETCH_LIMIT_REACHED'], [409, 'LIVE_FETCH_IN_PROGRESS']] as const) {
+    capture(json({ error: { code, message: 'x' } }, status))
+    await assert.rejects(fetchLiveJobs(), (error: unknown) => error instanceof CandidateApiError && error.code === code
+      && error.status === status && !isUnauthorizedError(error) && !isJobsUnavailableError(error))
+  }
+})
+
+test('a network failure on a live fetch is its own error', async () => {
+  globalThis.fetch = async () => { throw new TypeError('fetch failed') }
+  await assert.rejects(fetchLiveJobs(), (error: unknown) => error instanceof CandidateApiError && error.code === 'NETWORK_ERROR')
 })

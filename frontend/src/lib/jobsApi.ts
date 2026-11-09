@@ -102,3 +102,26 @@ export async function fetchRecommendations(): Promise<Recommendations> {
   if (!isRecommendations(result)) throw new CandidateApiError('The server returned an invalid response.', 'INVALID_RESPONSE', 200)
   return result
 }
+
+// ---- live fetch (Task 12) ----------------------------------------------------------------------------------------------------------
+export interface LiveFetchResult {
+  status: 'ok' | 'nothing_found'
+  fetched: number
+  imported_new: number
+  already_present: number
+  dropped: number
+}
+
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+function isLiveFetchResult(value: unknown): value is LiveFetchResult {
+  return isRecord(value) && (value.status === 'ok' || value.status === 'nothing_found')
+    && isCount(value.fetched) && isCount(value.imported_new) && isCount(value.already_present) && isCount(value.dropped)
+}
+
+// No request body: the server reads the saved profile itself. The browser adds the Origin header the server requires.
+export async function fetchLiveJobs(): Promise<LiveFetchResult> {
+  const result = await request('POST', '/api/v1/candidate/jobs/fetch-live')
+  if (!isLiveFetchResult(result)) throw new CandidateApiError('The server returned an invalid response.', 'INVALID_RESPONSE', 200)
+  return result
+}
