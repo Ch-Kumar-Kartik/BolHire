@@ -127,7 +127,8 @@ async def _take_lock(connection: AsyncConnection) -> None:
 async def load_existing(connection: AsyncConnection) -> list[ExistingJob]:
     columns = [Job.id, Job.slug, Job.is_active, *(getattr(Job, field) for field in CONTENT_FIELDS)]
     try:
-        rows = (await connection.execute(select(*columns).order_by(Job.slug))).all()
+        # Sample rows only (Task 11b): imported real listings are never read, updated or retired by the sample seed.
+        rows = (await connection.execute(select(*columns).where(Job.source.is_(None)).order_by(Job.slug))).all()
     except ProgrammingError as error:
         if getattr(error.orig, "sqlstate", None) == _UNDEFINED_TABLE:
             raise JobsTableMissingError from None

@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, DOUBLE_PRECISION, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy import BigInteger
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -96,6 +96,13 @@ class Job(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("statement_timestamp()"))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("statement_timestamp()"))
+    # Task 11b provenance (migration 0003): all NULL for sample rows; source, external_id, https source_url and retrieved_at
+    # all set for an imported real listing. Never an apply link, never poster or applicant data.
+    source: Mapped[str | None] = mapped_column(String(40))
+    external_id: Mapped[str | None] = mapped_column(String(100))
+    source_url: Mapped[str | None] = mapped_column(String(2048))
+    retrieved_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    posted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     __table_args__ = (
         CheckConstraint("btrim(title) <> ''", name="job_title_nonempty"),
         CheckConstraint("btrim(company) <> ''", name="job_company_nonempty"),
@@ -113,7 +120,14 @@ class Job(Base):
         CheckConstraint("bolhire_valid_skills(required_skills)", name="job_skills_structure"),
         CheckConstraint("cardinality(required_skills) >= 1", name="job_skills_required"),
         CheckConstraint("work_mode = 'remote' OR city_key IS NOT NULL", name="job_city_required"),
-        CheckConstraint("is_sample", name="job_is_sample"),
+        CheckConstraint(
+            "(source IS NULL AND is_sample AND external_id IS NULL AND source_url IS NULL AND retrieved_at IS NULL AND posted_at IS NULL)"
+            " OR (source IS NOT NULL AND NOT is_sample AND external_id IS NOT NULL AND btrim(external_id) <> ''"
+            " AND source_url IS NOT NULL AND source_url ~ '^https://' AND retrieved_at IS NOT NULL)",
+            name="job_is_sample",
+        ),
+        CheckConstraint(f"source IS NULL OR source ~ {_KEY}", name="job_source_format"),
+        UniqueConstraint("source", "external_id", name="uq_jobs_source_external_id"),
         CheckConstraint("updated_at >= created_at", name="job_timestamps"),
     )
 
