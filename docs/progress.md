@@ -1,5 +1,16 @@
 # Progress
 
+## MVP 1, Tasks 10-12: Job Catalogue, Matching, Real Listings and Live Fetch
+
+Status: implemented and verified locally on a disposable PostgreSQL 17; committed on `main` (not pushed). **Private local demo only; nothing here is deployed.** Last verified: backend 1801 passed on PostgreSQL (1563 passed / 238 skipped offline), frontend 143 tests and a clean build. No browser-driven component tests exist; behavior was checked with headless Chromium against scratch mocks.
+
+- **Task 10, catalogue and matching:** migrations 0002 (`jobs`, `job_interests`). 24 fictional sample jobs (`app/jobs/catalogue_data.py`) loaded by the idempotent seed (`python -m scripts.seed_job_catalogue`). Deterministic text normalization, alias resolution (English, Devanagari, Romanized) and scoring (skills 50, role 20, experience 15, location 10, work mode 5; matched, partial, unmatched, not evaluated) with no model in the loop. `GET /api/v1/candidate/jobs/recommendations` (cookie auth, read-only, 30/min per client). Interest endpoints are not built.
+- **Frontend:** app shell with Chat, Jobs inbox and Profile, a jobs inbox with expandable rows, a sample-data banner, and explicit "Show my matches".
+- **Task 11b, real listings:** migration 0003 adds provenance (`source`, `external_id`, `source_url`, `retrieved_at`, `posted_at`); a row is either a sample (no provenance) or a real listing (https posting link required). `python -m scripts.ingest_jobs --check|--run --confirm-ingest <file>` maps an Apify LinkedIn export (`app/jobs/linkedin_import.py`; never stores apply links or poster data). The sample seed only reads sample rows. The UI shows a source tag, retrieval date and a "View original posting" link for real rows, and hides work mode for them (it is an import default).
+- **Task 12, live fetch:** `POST /api/v1/candidate/jobs/fetch-live` and a "Find live jobs" button. Needs `APIFY_TOKEN` in the backend environment (off without it). Reads the saved role and location, calls Apify's run-sync endpoint with a $0.25 per-run cap and 120 s timeout, and stores results through the same import. Limits: 25 listings per fetch, 3 fetches per candidate per hour, one at a time per candidate, 125 listings (5 fetches) per backend run. Responses and logs carry only fixed codes.
+
+Limitations: the 125-listing and hourly counters are in memory, so a backend restart resets them and several processes would multiply them. Real listings are not retired or refreshed except by re-importing. The match score for real rows still includes a defaulted work mode that the UI hides. The actor's real output keys, its real cost per run and the Vite proxy's behavior for a 2-minute request are unverified (no live Apify call was made). Imported data must stay in `local_data/` and never be committed.
+
 ## MVP 1, Task 9.3: Explicit Profile Save, Retention, and Retrieval
 
 Status: implemented and verified locally (disposable PostgreSQL 17, plus a real-HTTP walk through the Vite proxy against a persistent local demo database); uncommitted. **Demo scope only, not production-ready:** there is no profile deletion, editing, or renewal, no multi-instance session storage, and nothing is deployed. Do not use it with real candidate data. No migration, no new dependency, no live Gemini or Gnani call.

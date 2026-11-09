@@ -43,6 +43,15 @@
 - `compose.test.yaml`: loopback-only disposable PostgreSQL 17 using tmpfs.
 - `docs/database-development.md`: configuration, migration, repository semantics, and local test instructions.
 
+### Job catalogue, matching, real listings and live fetch (Tasks 10-12)
+
+- `backend/app/jobs/`: `vocabulary.py` (canonical role, city, skill and level keys), `text.py` / `aliases.py` / `resolver.py` (normalization, tokenizer and alias resolution), `matching.py` (deterministic scorer), `catalogue_data.py` / `catalogue_validation.py` (24 fictional jobs and their rules), `linkedin_import.py` (pure mapping of an Apify LinkedIn export), `live_fetch.py` / `live_fetch_config.py` (Apify client, search URL, limits, redacted token).
+- `backend/app/db/`: `job_catalogue_seed.py` (idempotent sample seed, sample rows only), `job_import.py` (idempotent real-row import, no retirement, same advisory lock), `job_queries.py` (read-only active jobs), `models.py` (`Job`, `JobInterest`).
+- `backend/app/api/job_recommendations.py` and `live_fetch.py`: the recommendations and fetch-live routes.
+- `backend/alembic/versions/0002_job_catalogue.py`, `0003_real_job_sources.py`: jobs tables and real-listing provenance.
+- `backend/scripts/seed_job_catalogue.py`, `ingest_jobs.py`: seed and file import (run as `python -m scripts.<name>`).
+- Frontend: `components/AppShell.tsx`, `JobMatches.tsx`, `icons.tsx`; `lib/jobsApi.ts`, `jobMatchView.ts`, `liveFetchView.ts` (+ tests).
+
 ### Application and existing workflows
 
 - `backend/app/api/dev_profile.py`: explicitly enabled loopback-only profile inspection without provider calls or activity refresh; see `docs/local-profile-verification.md`.

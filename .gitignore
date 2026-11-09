@@ -22,3 +22,6 @@ local-dev-commands.txt
 # Local speech sample for manual smoke testing
 backend/smoke-input.wav
 backend/smoke-output.wav
+
+# Local, never-committed data (scraped or exported job listings)
+local_data/
