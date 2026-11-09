@@ -192,21 +192,29 @@ def test_the_seed_still_retires_a_dropped_sample_and_only_that_sample(db_url):
     run(db_url, scenario)
 
 
-# ---- read path (Part C evidence) ----------------------------------------------------------------------------------------------
-def test_real_rows_reach_the_matcher_and_the_response_builder_without_internal_fields(db_url):
+# ---- read path ------------------------------------------------------------------------------------------------------------------
+def test_real_rows_reach_the_response_with_provenance_and_samples_with_none(db_url):
     async def scenario(database, _):
         await run_seed(database.engine, CATALOGUE)
         await import_jobs(database.engine, REAL)
         active = await load_active_jobs(database.sessions)
         assert len(active) == 27
         real = {item.job.id: item for item in active if not item.is_sample}
-        assert len(real) == 3
+        assert len(real) == 3 and all(item.source == "linkedin" and item.retrieved_at == RETRIEVED for item in real.values())
+        assert all((item.source, item.source_url, item.retrieved_at) == (None, None, None) for item in active if item.is_sample)
         profile = CandidateProfile(target_role="Backend developer", technical_skills=("Django", "PostgreSQL"), preferred_location="Pune")
         outcome = match_jobs(profile, [item.job for item in active], limit=50)
-        body = _response(outcome, {item.job.id: item.is_sample for item in active}).model_dump_json()
-        matched_real = [m for m in outcome.matches if m.job.id in real]
-        assert matched_real and '"is_sample":false' in body
-        for leaked in ("linkedin", "source_url", '"source"', '"slug"', "4000000001", "retrieved_at"):
+        response = _response(outcome, {item.job.id: item for item in active})
+        body = response.model_dump_json()
+        jobs = [match.job for match in response.matches]
+        shown_real = [job for job in jobs if not job.is_sample]
+        assert shown_real and len(shown_real) < len(jobs)  # a mixed response
+        assert all(job.source == "linkedin" and job.source_url.startswith("https://www.linkedin.com/jobs/view/") for job in shown_real)
+        assert all(job.retrieved_at == RETRIEVED for job in shown_real)
+        assert all((job.source, job.source_url, job.retrieved_at) == (None, None, None) for job in jobs if job.is_sample)
+        assert response.sample_data_notice.startswith("Listings marked Sample are fictional examples for demonstration.")
+        assert "retrieved on 8 November 2026" in response.sample_data_notice and "apply" not in response.sample_data_notice.casefold()
+        for leaked in ('"slug"', "linkedin-4000000001", '"external_id"', '"role_key"', '"city_key"', '"is_active"'):  # the posting link itself legitimately contains the job id
             assert leaked not in body, leaked
     run(db_url, scenario)
 

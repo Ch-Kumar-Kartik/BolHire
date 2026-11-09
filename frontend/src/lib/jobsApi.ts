@@ -17,6 +17,10 @@ export interface JobSummary {
   required_skills: string[]
   description: string
   is_sample: boolean
+  /** Real listings only; null for samples. The posting link only points at the source page; it never submits anything to an employer. */
+  source: string | null
+  source_url: string | null
+  retrieved_at: string | null
 }
 
 export interface CriterionResult {
@@ -52,6 +56,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const isNullableNumber = (value: unknown): boolean => value === null || isNumber(value)
+const isNullableString = (value: unknown): boolean => value === null || typeof value === 'string'
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string')
 
 function isJob(value: unknown): value is JobSummary {
@@ -59,6 +64,9 @@ function isJob(value: unknown): value is JobSummary {
     && ['id', 'title', 'company', 'location_label', 'work_mode', 'employment_type', 'description'].every((key) => typeof value[key] === 'string')
     && isNullableNumber(value.min_experience_years) && isNullableNumber(value.max_experience_years)
     && isStringArray(value.required_skills) && typeof value.is_sample === 'boolean'
+    && isNullableString(value.source) && isNullableString(value.source_url) && isNullableString(value.retrieved_at)
+    // A sample never carries provenance: a response that says otherwise is malformed, not something to display.
+    && (value.is_sample === false || (value.source === null && value.source_url === null && value.retrieved_at === null))
 }
 
 function isCriterion(value: unknown): value is CriterionResult {

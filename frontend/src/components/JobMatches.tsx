@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { fetchRecommendations, isJobsUnavailableError, isUnauthorizedError, type JobMatch, type Recommendations } from '../lib/jobsApi'
 import {
-  SAMPLE_BANNER, avatarHue, companyInitial, coverageText, criterionLabel, describeCriterion, emptyStateText, employmentTypeLabel, fitLabel,
-  formatExperienceRange, headerText, scoreTone, whySuggestedText, workModeLabel,
+  POSTING_LINK_TEXT, avatarHue, bannerText, companyInitial, coverageText, criterionLabel, describeCriterion, emptyStateText,
+  employmentTypeLabel, fitLabel, formatExperienceRange, formatRetrievedDate, headerText, jobMetaLine, listingMix, postingUrl, scoreTone, sourceLabel, visibleCriteria,
+  sourceTag, subtitleText, whySuggestedText,
 } from '../lib/jobMatchView'
 import { ChevronIcon, InboxIcon } from './icons'
 
@@ -45,6 +46,8 @@ function MatchRow({ match, open, onToggle }: { match: JobMatch; open: boolean; o
   const { job } = match
   const panelId = `match-panel-${job.id}`
   const tone = scoreTone(match.score_percent)
+  const link = postingUrl(job)
+  const retrieved = formatRetrievedDate(job.retrieved_at)
   return (
     <li className={`job-row${open ? ' is-open' : ''}`}>
       <button type="button" className="job-row-button" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
@@ -54,9 +57,9 @@ function MatchRow({ match, open, onToggle }: { match: JobMatch; open: boolean; o
         <span className="job-row-main">
           <span className="job-row-title">
             <strong>{job.title}</strong>
-            <span className="sample-tag">Sample</span>
+            {job.is_sample ? <span className="sample-tag">Sample</span> : <span className="source-tag">{sourceTag(job)}</span>}
           </span>
-          <span className="job-row-meta">{job.company} · {job.location_label} · {workModeLabel(job.work_mode)}</span>
+          <span className="job-row-meta">{jobMetaLine(job)}</span>
         </span>
         <span className="job-row-side">
           <span className={`fit-chip fit-${tone}`}>{fitLabel(match.score_percent)}</span>
@@ -69,11 +72,13 @@ function MatchRow({ match, open, onToggle }: { match: JobMatch; open: boolean; o
           <div><dt>Employment</dt><dd>{employmentTypeLabel(job.employment_type)}</dd></div>
           <div><dt>Experience</dt><dd>{formatExperienceRange(job.min_experience_years, job.max_experience_years)}</dd></div>
           <div><dt>Match</dt><dd>{match.score_percent}%</dd></div>
+          {!job.is_sample && <div><dt>Source</dt><dd>{sourceLabel(job.source)}</dd></div>}
+          {!job.is_sample && retrieved && <div><dt>Retrieved</dt><dd>{retrieved}</dd></div>}
         </dl>
         <SkillChips match={match} />
         <h4 className="panel-heading">Why this match</h4>
         <ul className="criteria-list">
-          {match.criteria.map((criterion) => (
+          {visibleCriteria(match).map((criterion) => (
             <li key={criterion.name}>
               <span>{criterionLabel(criterion.name)}</span>
               <span>{describeCriterion(criterion)}</span>
@@ -82,6 +87,19 @@ function MatchRow({ match, open, onToggle }: { match: JobMatch; open: boolean; o
         </ul>
         <h4 className="panel-heading">About this job</h4>
         <p className="job-description">{job.description}</p>
+        {!job.is_sample && (
+          <p className="source-note">
+            This is a real listing retrieved on the date shown. It may be out of date.
+            {link && (
+              <>
+                {' '}
+                <a className="source-link" href={link} target="_blank" rel="noopener noreferrer" aria-label={`${POSTING_LINK_TEXT} (opens in a new tab)`}>
+                  {POSTING_LINK_TEXT}
+                </a>
+              </>
+            )}
+          </p>
+        )}
       </div>
     </li>
   )
@@ -125,6 +143,7 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
 
   if (!signedIn) return null
   const loading = view.phase === 'loading'
+  const mix = view.phase === 'done' ? listingMix(view.data.matches) : 'none'
   const label = loading ? 'Finding matches…' : view.phase === 'error' ? 'Try again' : view.phase === 'done' ? 'Refresh matches' : 'Show my matches'
   const actionButton = (
     <button type="button" className={view.phase === 'idle' ? undefined : 'secondary-button'} onClick={() => void load()} disabled={loading}>
@@ -137,17 +156,17 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
       <div className="inbox-header">
         <div>
           <h2 id="job-matches-title">Jobs inbox</h2>
-          <p className="inbox-subtitle">Sample listings matched to your saved profile</p>
+          <p className="inbox-subtitle">{subtitleText(mix)}</p>
         </div>
         {view.phase !== 'idle' && actionButton}
       </div>
-      <p className="sample-banner" role="note">{SAMPLE_BANNER}</p>
+      <p className="sample-banner" role="note">{bannerText(mix)}</p>
 
       {view.phase === 'idle' && (
         <div className="empty-state">
           <span className="empty-icon"><InboxIcon size={28} /></span>
           <p>
-            See which sample jobs fit your saved profile. Matching runs only when you ask, and uses your skills, target role, experience, location and work mode.
+            See which jobs fit your saved profile. Matching runs only when you ask, and uses your skills, target role, experience, location and work mode.
           </p>
           {actionButton}
         </div>
@@ -172,7 +191,7 @@ function JobMatches({ signedIn, onUnauthorized, onResultCount, candidateName }: 
             </div>
           ) : (
             <>
-              <p className="list-caption">{headerText(candidateName, view.data.matches.length)}</p>
+              <p className="list-caption">{headerText(candidateName, view.data.matches.length, mix)}</p>
               <ul className="job-list">
                 {view.data.matches.map((match) => (
                   <MatchRow

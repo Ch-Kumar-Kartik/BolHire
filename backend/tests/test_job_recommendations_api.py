@@ -11,19 +11,21 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 
 import app.api.job_recommendations as route
 from app.api.job_recommendations import (
-    SAMPLE_DATA_NOTICE, CriterionView, JobView, MatchView, RecommendationsResponse,
+    SAMPLE_DATA_NOTICE, CriterionView, JobView, MatchView, RecommendationsResponse, _response, data_notice,
 )
 from app.db.candidate_repository import DatabaseConstraintError, ProfileNotFoundError, StoredProfileInvalidError
 from app.db.database import DatabaseUnavailableError
 from app.db.job_queries import ActiveJob, JobsUnavailableError, load_active_jobs
-from app.jobs.matching import MatchableJob
+from datetime import UTC, datetime
+
+from app.jobs.matching import MatchableJob, match_jobs
 from app.services.candidate_profile import CandidateProfile
 from app.services.rate_limit import SlidingWindowLimiter
 from test_candidate_api import client_for, cookie, error_code, make, saved  # noqa: F401  (make is a fixture)
 
 URL = "/api/v1/candidate/jobs/recommendations"
 JOB_KEYS = {"id", "title", "company", "location_label", "work_mode", "employment_type", "min_experience_years",
-            "max_experience_years", "required_skills", "description", "is_sample"}
+            "max_experience_years", "required_skills", "description", "is_sample", "source", "source_url", "retrieved_at"}
 CRITERION_KEYS = {"name", "weight", "state", "score_percent", "reason", "matched_skills", "missing_skills"}
 
 
@@ -245,3 +247,116 @@ def test_the_sample_notice_is_the_specified_text():
 def test_json_roundtrip_of_a_response_has_no_unexpected_keys(wired):
     body = get(wired.app).json()
     assert json.loads(json.dumps(body)) == body
+
+
+# ---- provenance and the data notice (Task 11b part 2) --------------------------------------------------------------------------------
+RETRIEVED = datetime(2026, 11, 8, 9, 30, tzinfo=UTC)
+POSTING = "https://www.linkedin.com/jobs/view/4000000001"
+
+
+def real(slug="real-job", **changes):
+    return ActiveJob(matchable(slug, title="Backend Developer", role_key="backend-developer"), False, changes.get("source", "linkedin"),
+                     changes.get("source_url", POSTING), changes.get("retrieved_at", RETRIEVED))
+
+
+def sample(slug="sample-job"):
+    return ActiveJob(matchable(slug), True)
+
+
+def response_for(*listings):
+    jobs = [item.job for item in listings]
+    outcome = match_jobs(CandidateProfile(technical_skills=("Python", "SQL"), target_role="data analyst"), jobs, limit=10)
+    return _response(outcome, {item.job.id: item for item in listings})
+
+
+def test_a_real_listing_carries_its_source_posting_link_and_retrieval_time():
+    body = response_for(real()).model_dump(mode="json")
+    job = body["matches"][0]["job"]
+    assert job["is_sample"] is False and job["source"] == "linkedin"
+    assert job["source_url"] == POSTING and job["retrieved_at"] == "2026-11-08T09:30:00Z"
+
+
+def test_a_sample_listing_has_no_provenance_even_if_the_row_somehow_holds_some():
+    leaky = ActiveJob(matchable("sample-job"), True, "linkedin", POSTING, RETRIEVED)
+    job = response_for(leaky).model_dump(mode="json")["matches"][0]["job"]
+    assert (job["is_sample"], job["source"], job["source_url"], job["retrieved_at"]) == (True, None, None, None)
+
+
+@pytest.mark.parametrize("link", ["http://www.linkedin.com/jobs/view/1", "javascript:alert(1)", "ftp://x/y", "", None])
+def test_a_non_https_posting_link_is_never_returned(link):
+    job = response_for(real(source_url=link)).model_dump(mode="json")["matches"][0]["job"]
+    assert job["source_url"] is None and job["source"] == "linkedin"
+
+
+def test_the_response_never_exposes_the_slug_or_other_internal_fields_for_real_rows():
+    text = response_for(real(), sample()).model_dump_json()
+    for forbidden in ("slug", "real-job", "sample-job", "role_key", "city_key", "is_active", "external_id", "candidate_id"):
+        assert forbidden not in text, forbidden
+
+
+def test_the_job_model_rejects_provenance_on_a_sample_and_a_non_https_link():
+    base = {key: None for key in JOB_KEYS} | {"required_skills": [], "id": "x", "title": "t", "company": "c", "location_label": "l",
+                                              "work_mode": "remote", "employment_type": "full_time", "description": "d"}
+    with pytest.raises(ValidationError):
+        JobView(**{**base, "is_sample": True, "source": "linkedin"})
+    with pytest.raises(ValidationError):
+        JobView(**{**base, "is_sample": True, "retrieved_at": RETRIEVED})
+    with pytest.raises(ValidationError):
+        JobView(**{**base, "is_sample": False, "source": "linkedin", "source_url": "http://x.example/1", "retrieved_at": RETRIEVED})
+    JobView(**{**base, "is_sample": False, "source": "linkedin", "source_url": POSTING, "retrieved_at": RETRIEVED})
+
+
+def test_a_sample_only_or_empty_response_keeps_the_original_notice_verbatim():
+    assert data_notice([sample(), sample("second")]) == SAMPLE_DATA_NOTICE
+    assert data_notice([]) == SAMPLE_DATA_NOTICE
+    assert response_for(sample()).sample_data_notice == SAMPLE_DATA_NOTICE
+
+
+def test_a_real_only_response_states_the_retrieval_date_and_the_staleness_caveat():
+    notice = response_for(real()).sample_data_notice
+    assert notice == ("These listings were retrieved on 8 November 2026. "
+                      "They may be out of date, so check the original posting before relying on them.")
+
+
+def test_a_mixed_response_says_which_listings_are_fictional():
+    notice = response_for(real(), sample()).sample_data_notice
+    assert notice.startswith("Listings marked Sample are fictional examples for demonstration. ")
+    assert "retrieved on 8 November 2026" in notice and "may be out of date" in notice and "original posting" in notice
+
+
+def test_several_retrieval_days_are_stated_as_a_range():
+    later = datetime(2026, 11, 9, 23, 59, tzinfo=UTC)
+    assert "retrieved between 8 November 2026 and 9 November 2026" in data_notice([real("a"), real("b", retrieved_at=later)])
+
+
+def test_the_retrieval_date_is_the_utc_date():
+    late = datetime(2026, 11, 8, 23, 30, tzinfo=UTC)
+    assert "on 8 November 2026" in data_notice([real(retrieved_at=late)])
+
+
+def test_the_notice_depends_only_on_the_listings_returned_not_on_every_job_loaded(wired):
+    unrelated_real = ActiveJob(matchable("real-never-matches", role_key="backend-developer", required_skills=("figma", "tableau", "selenium")),
+                               False, "linkedin", POSTING, RETRIEVED)
+    wired.set_jobs([sample("only-sample-matches"), unrelated_real])
+    wired.candidates.saved = type(wired.candidates.saved)(**{**wired.candidates.saved.__dict__, "profile": CandidateProfile(
+        target_role="data analyst", technical_skills=("Python", "SQL"), experience_years=2)})
+    body = get(wired.app).json()
+    assert [m["job"]["is_sample"] for m in body["matches"]] == [True]  # the real row was loaded but excluded by the matcher
+    assert body["sample_data_notice"] == SAMPLE_DATA_NOTICE
+
+
+@pytest.mark.parametrize("listings", [[real()], [real(), sample()], [real(retrieved_at=None)], [real("a"), real("b", retrieved_at=datetime(2026, 11, 9, tzinfo=UTC))]])
+def test_notices_for_real_rows_never_contain_the_word_apply(listings):
+    notice = data_notice(listings).casefold()
+    assert "apply" not in notice and "applied" not in notice and "application" not in notice
+
+
+def test_a_real_row_without_a_retrieval_time_still_gets_a_dated_or_hedged_notice():
+    assert data_notice([real(retrieved_at=None)]).startswith("These listings were retrieved earlier.")
+
+
+def test_the_endpoint_returns_real_provenance_through_the_whole_stack(wired):
+    wired.set_jobs([real("only-real")])
+    body = get(wired.app).json()
+    assert body["sample_data_notice"].startswith("These listings were retrieved on 8 November 2026.")
+    assert body["matches"] and body["matches"][0]["job"]["source"] == "linkedin" and body["matches"][0]["job"]["source_url"] == POSTING

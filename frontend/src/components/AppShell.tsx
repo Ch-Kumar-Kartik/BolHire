@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
-import { SAMPLE_BANNER } from '../lib/jobMatchView'
+import { bannerText, subtitleText } from '../lib/jobMatchView'
 import { ChatIcon, InboxIcon, PersonIcon } from './icons'
 
 export type ShellView = 'chat' | 'jobs' | 'profile'
@@ -110,8 +110,8 @@ export default function AppShell({ theme, signedIn, jobCount, themeToggle, chat,
           {!signedIn && (
             <div className="jobs-signed-out">
               <h2>Jobs inbox</h2>
-              <p className="inbox-subtitle">Sample listings matched to your saved profile</p>
-              <p className="sample-banner" role="note">{SAMPLE_BANNER}</p>
+              <p className="inbox-subtitle">{subtitleText('none')}</p>
+              <p className="sample-banner" role="note">{bannerText('none')}</p>
               <div className="empty-state">
                 <span className="empty-icon"><InboxIcon size={28} /></span>
                 <p>Save a profile from the chat, or sign in with your recovery key, to see sample job matches.</p>

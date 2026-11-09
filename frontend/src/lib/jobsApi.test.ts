@@ -13,7 +13,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const job = {
   id: 'j1', title: 'Data Analyst', company: 'Tarkashi Analytics', location_label: 'New Delhi, Delhi', work_mode: 'onsite',
   employment_type: 'full_time', min_experience_years: 1, max_experience_years: 3, required_skills: ['sql', 'excel'],
-  description: 'A fictional listing.', is_sample: true,
+  description: 'A fictional listing.', is_sample: true, source: null, source_url: null, retrieved_at: null,
 }
 const criteria = [
   { name: 'skills', weight: 50, state: 'partial', score_percent: 50, reason: null, matched_skills: ['sql'], missing_skills: ['excel'] },
@@ -145,4 +145,45 @@ test('the error helpers ignore errors that did not come from the API', () => {
     assert.equal(isUnauthorizedError(value), false)
     assert.equal(isJobsUnavailableError(value), false)
   }
+})
+
+// ---- provenance (Task 11b part 2) ----------------------------------------------------------------------------------------------------
+const realJob = { ...job, id: 'r1', is_sample: false, source: 'linkedin', source_url: 'https://www.linkedin.com/jobs/view/4000000001', retrieved_at: '2026-11-08T09:30:00Z' }
+const withJob = (changes: Record<string, unknown>) => ({ ...good(), matches: [{ ...good().matches[0], job: { ...job, ...changes } }] })
+
+test('a real listing with its provenance is parsed', async () => {
+  capture(json(withJob(realJob)))
+  const result = await fetchRecommendations()
+  const parsed = result.matches[0].job
+  assert.deepEqual([parsed.is_sample, parsed.source, parsed.source_url, parsed.retrieved_at], [false, 'linkedin', realJob.source_url, realJob.retrieved_at])
+})
+
+test('a sample listing parses with null provenance', async () => {
+  capture(json(good()))
+  const parsed = (await fetchRecommendations()).matches[0].job
+  assert.deepEqual([parsed.is_sample, parsed.source, parsed.source_url, parsed.retrieved_at], [true, null, null, null])
+})
+
+const malformedProvenance: [string, Record<string, unknown>][] = [
+  ['source missing', { source: undefined }],
+  ['source_url missing', { source_url: undefined }],
+  ['retrieved_at missing', { retrieved_at: undefined }],
+  ['source not a string', { ...realJob, source: 5 }],
+  ['source_url not a string', { ...realJob, source_url: 5 }],
+  ['retrieved_at not a string', { ...realJob, retrieved_at: 20261108 }],
+  ['a sample that carries a source', { source: 'linkedin' }],
+  ['a sample that carries a posting link', { source_url: 'https://www.linkedin.com/jobs/view/1' }],
+  ['a sample that carries a retrieval time', { retrieved_at: '2026-11-08T09:30:00Z' }],
+]
+
+for (const [name, changes] of malformedProvenance) {
+  test(`malformed provenance is rejected: ${name}`, async () => {
+    capture(json(withJob(changes)))
+    await assert.rejects(fetchRecommendations(), (error: unknown) => error instanceof CandidateApiError && error.code === 'INVALID_RESPONSE')
+  })
+}
+
+test('a real listing with no posting link is still valid (the link is simply not shown)', async () => {
+  capture(json(withJob({ ...realJob, source_url: null })))
+  assert.equal((await fetchRecommendations()).matches[0].job.source_url, null)
 })

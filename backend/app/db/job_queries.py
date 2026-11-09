@@ -1,6 +1,7 @@
 """Read-only access to the active sample job catalogue. Never writes; never raises database detail."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -21,6 +22,10 @@ class JobsUnavailableError(Exception):
 class ActiveJob:
     job: MatchableJob
     is_sample: bool
+    # Provenance of an imported real listing (Task 11b). All None for a sample row. Never an apply link or poster data.
+    source: str | None = None
+    source_url: str | None = None
+    retrieved_at: datetime | None = None
 
 
 async def load_active_jobs(sessions: async_sessionmaker[AsyncSession]) -> list[ActiveJob]:
@@ -35,7 +40,7 @@ async def load_active_jobs(sessions: async_sessionmaker[AsyncSession]) -> list[A
                     description=row.description, employment_type=row.employment_type, role_key=row.role_key, city_key=row.city_key,
                     work_mode=row.work_mode, min_experience_years=row.min_experience_years,
                     max_experience_years=row.max_experience_years, required_skills=tuple(row.required_skills),
-                ), row.is_sample)
+                ), row.is_sample, row.source, row.source_url, row.retrieved_at)
                 for row in rows
             ]
     except (SQLAlchemyError, OSError):

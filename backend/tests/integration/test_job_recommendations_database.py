@@ -163,7 +163,9 @@ def test_no_identifier_or_internal_field_appears_anywhere_in_the_response(app):
             assert item not in raw and item not in response.text, item
         assert candidate_id not in str(response.headers) and key not in str(response.headers)
         assert all(set(match["job"]) == {"id", "title", "company", "location_label", "work_mode", "employment_type", "min_experience_years",
-                                         "max_experience_years", "required_skills", "description", "is_sample"} for match in response.json()["matches"])
+                                         "max_experience_years", "required_skills", "description", "is_sample", "source", "source_url", "retrieved_at"}
+                   for match in response.json()["matches"])
+        assert all((m["job"]["source"], m["job"]["source_url"], m["job"]["retrieved_at"]) == (None, None, None) for m in response.json()["matches"])
     run(app, scenario)
 
 

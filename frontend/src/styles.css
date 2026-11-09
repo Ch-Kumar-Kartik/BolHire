@@ -297,6 +297,8 @@ input, select, textarea {
 
 .sample-tag { padding: 0 0.4rem; border: 1px solid var(--border); border-radius: 0.375rem; color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 
+.source-tag { padding: 0 0.4rem; border: 1px solid var(--accent); border-radius: 0.375rem; color: var(--text); background: var(--accent-soft); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.03em; }
+
 .job-row-side { display: grid; justify-items: end; gap: 0.25rem; }
 .job-row-score { font-weight: 800; font-variant-numeric: tabular-nums; }
 .fit-chip { padding: 0.125rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
@@ -378,3 +380,8 @@ input, select, textarea {
   .criteria-list li, .profile-fields div { grid-template-columns: 1fr; gap: 0; }
   .language-control { flex-wrap: wrap; }
 }
+
+/* The original-posting link is a plain text link to the source page. It is deliberately not a button. */
+.source-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
+.source-link { color: var(--link); font-weight: 600; text-decoration: underline; text-underline-offset: 0.15em; overflow-wrap: anywhere; }
+.source-link:hover { text-decoration-thickness: 2px; }
